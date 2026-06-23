@@ -6,10 +6,12 @@ import '../../bigevent/event_data.dart';
 import '../../bigevent/event_merger.dart';
 import '../../forecast/trend_consensus.dart';
 import '../../models/dashboard_data.dart';
+import '../../models/trend_judgment.dart';
 import '../../models/radar_tab.dart';
 import '../../regime/regime_history.dart';
 import '../../services/api_service.dart';
 import '../../theme/app_theme.dart';
+import '../../widgets/trend_judgment_hero.dart';
 import '../../widgets/commander_banner.dart';
 import '../../widgets/black_swan_panel.dart';
 import '../../widgets/regime_matrix_panel.dart';
@@ -34,6 +36,8 @@ class WallboardTab extends StatefulWidget {
     this.isRefreshing = false,
     this.apiHealthy = false,
     this.api,
+    this.trendJudgment,
+    this.readinessTier,
   });
 
   final DashboardData data;
@@ -47,6 +51,8 @@ class WallboardTab extends StatefulWidget {
   final bool isRefreshing;
   final bool apiHealthy;
   final ApiService? api;
+  final TrendJudgment? trendJudgment;
+  final String? readinessTier;
 
   @override
   State<WallboardTab> createState() => _WallboardTabState();
@@ -68,6 +74,9 @@ class _WallboardTabState extends State<WallboardTab> {
     _autoRefresh?.cancel();
     super.dispose();
   }
+
+  TrendJudgment? get _heroJudgment =>
+      widget.trendJudgment ?? TrendJudgment.fromBtcRegime(widget.data.btcRegime);
 
   @override
   Widget build(BuildContext context) {
@@ -96,6 +105,12 @@ class _WallboardTabState extends State<WallboardTab> {
             ],
           ),
           const SizedBox(height: 12),
+          if (_heroJudgment != null)
+            TrendJudgmentHero(
+              judgment: _heroJudgment!,
+              readinessTier: widget.readinessTier,
+            ),
+          if (_heroJudgment != null) const SizedBox(height: 12),
           CommanderBanner(data: widget.data, events: widget.events),
           if (widget.data.tradingBrief != null) ...[
             const SizedBox(height: 12),

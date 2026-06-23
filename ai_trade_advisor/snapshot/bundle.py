@@ -8,10 +8,12 @@ from ai_trade_advisor.bigevent.store import EventStore
 from ai_trade_advisor.config import AdvisorConfig
 from ai_trade_advisor.forecast.ensemble import fetch_from_config
 from ai_trade_advisor.pipeline import run_advisor
+from ai_trade_advisor.readiness import check_readiness
 from ai_trade_advisor.regime.feedback.market_context import build_market_context
 from ai_trade_advisor.regime.feedback.recommender import recommend_model
 from ai_trade_advisor.regime.history import RegimeHistoryStore
 from ai_trade_advisor.regime.models import MODEL_CATALOG
+from ai_trade_advisor.regime.trend_judgment import build_trend_judgment
 from ai_trade_advisor.serialize import dashboard_payload
 from ai_trade_advisor.snapshot.store import SnapshotStore, snapshot_key
 
@@ -121,6 +123,22 @@ def build_radar_bundle(
         errors.append(f"regime_history: {exc}")
         regime_history = None
 
+    readiness_tier = "unknown"
+    try:
+        readiness_tier = check_readiness(cfg).tier
+    except Exception as exc:
+        errors.append(f"readiness: {exc}")
+
+    dash = core.get("dashboard") or {}
+    btc = dash.get("btc_regime") or {}
+    trend_judgment = build_trend_judgment(
+        btc,
+        regime_confirmation=dash.get("regime_confirmation"),
+        consensus=consensus,
+        data_tier=readiness_tier,
+        hmm_modifier=btc.get("hmm_confidence_modifier"),
+    )
+
     return {
         "snapshot_id": core["snapshot_id"],
         "version": core["version"],
@@ -134,6 +152,8 @@ def build_radar_bundle(
         "events": events,
         "consensus": consensus,
         "regime_history": regime_history,
+        "trend_judgment": trend_judgment,
+        "readiness_tier": readiness_tier,
         "errors": errors,
         "deep_scan_events": deep_scan_events,
     }

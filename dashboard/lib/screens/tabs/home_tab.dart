@@ -1,11 +1,13 @@
 import 'package:flutter/material.dart';
 
 import '../../models/dashboard_data.dart';
+import '../../models/trend_judgment.dart';
 import '../../bigevent/event_data.dart';
 import '../../models/radar_tab.dart';
 import '../../theme/app_theme.dart';
 import '../../widgets/etf_flow_panel.dart';
 import '../../widgets/onchain_panel.dart';
+import '../../widgets/trend_judgment_hero.dart';
 import '../../widgets/price_header.dart';
 import '../../widgets/radar_overview_bar.dart';
 import '../../widgets/radar_page_shell.dart';
@@ -21,6 +23,8 @@ class HomeTab extends StatelessWidget {
     required this.onRefresh,
     required this.onNavigate,
     this.isRefreshing = false,
+    this.trendJudgment,
+    this.readinessTier,
   });
 
   final DashboardData data;
@@ -29,6 +33,8 @@ class HomeTab extends StatelessWidget {
   final Future<void> Function() onRefresh;
   final void Function(RadarTab tab) onNavigate;
   final bool isRefreshing;
+  final TrendJudgment? trendJudgment;
+  final String? readinessTier;
 
   @override
   Widget build(BuildContext context) {
@@ -47,6 +53,11 @@ class HomeTab extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           PriceHeader(data: data),
+          const SizedBox(height: 12),
+          TrendJudgmentHero(
+            judgment: trendJudgment ?? TrendJudgment.fromBtcRegime(data.btcRegime),
+            readinessTier: readinessTier,
+          ),
           const SizedBox(height: 12),
           RadarOverviewBar(data: data, events: events),
           const SizedBox(height: 16),

@@ -5,6 +5,7 @@ import '../models/dashboard_data.dart';
 import '../models/radar_tab.dart';
 import '../regime/regime_history.dart';
 import '../forecast/trend_consensus.dart';
+import '../models/trend_judgment.dart';
 import '../services/api_service.dart';
 import '../bigevent/event_merger.dart';
 import '../signal/market_signals_panel.dart';
@@ -29,6 +30,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
   EventAnalysisData? _events;
   TrendConsensus? _consensus;
   RegimeHistoryData? _regimeHistory;
+  TrendJudgment? _trendJudgment;
+  String? _readinessTier;
   List<UnifiedEventItem> _unifiedEvents = [];
   bool _loading = true;
   bool _refreshing = false;
@@ -101,6 +104,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
         _events = result.events;
         _consensus = result.consensus;
         _regimeHistory = result.regimeHistory;
+        _trendJudgment = result.trendJudgment;
+        _readinessTier = result.readinessTier;
         _unifiedEvents = unified;
         _errors = result.errors;
         _apiHealthy = healthy;
@@ -265,6 +270,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
                 onNavigate: _goToTab,
                 apiHealthy: _apiHealthy,
                 api: _api,
+                trendJudgment: _trendJudgment,
+                readinessTier: _readinessTier,
               ),
             ) ??
             const SizedBox.shrink(),

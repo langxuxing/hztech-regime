@@ -5,6 +5,7 @@ import 'dart:math' as math;
 import 'package:http/http.dart' as http;
 
 import '../models/dashboard_data.dart';
+import '../models/trend_judgment.dart';
 import '../bigevent/event_data.dart';
 import '../regime/regime_history.dart';
 import '../forecast/trend_consensus.dart';
@@ -17,6 +18,8 @@ class RadarLoadResult {
     this.events,
     this.consensus,
     this.regimeHistory,
+    this.trendJudgment,
+    this.readinessTier,
     this.errors = const [],
     this.usedMock = false,
   });
@@ -25,6 +28,8 @@ class RadarLoadResult {
   final EventAnalysisData? events;
   final TrendConsensus? consensus;
   final RegimeHistoryData? regimeHistory;
+  final TrendJudgment? trendJudgment;
+  final String? readinessTier;
   final List<String> errors;
   final bool usedMock;
 }
@@ -248,11 +253,18 @@ class ApiService {
         errors.add(err);
       }
 
+      final trendJudgment = parseTrendJudgment(
+        bundle['trend_judgment'] != null ? asJsonMap(bundle['trend_judgment']) : null,
+        btcFallback: dashJson['btc_regime'] != null ? asJsonMap(dashJson['btc_regime']) : null,
+      );
+
       return RadarLoadResult(
         dashboard: dashboard,
         events: events,
         consensus: consensus,
         regimeHistory: history,
+        trendJudgment: trendJudgment,
+        readinessTier: bundle['readiness_tier'] as String?,
         errors: errors,
       );
     } catch (e) {
@@ -313,6 +325,10 @@ class ApiService {
       events: events,
       consensus: consensus,
       regimeHistory: history,
+      trendJudgment: parseTrendJudgment(
+        null,
+        btcFallback: dashboard.btcRegime,
+      ),
       errors: errors,
     );
   }

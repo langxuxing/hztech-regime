@@ -159,6 +159,8 @@ def run_regime_backtest(
                 {
                     "timestamp": int(df_30m.iloc[idx]["timestamp"]),
                     "regime_id": rid,
+                    "raw_trend": analysis.raw_trend,
+                    "tech_trend": analysis.tech_trend,
                     "close": float(closes.iloc[idx]),
                     "spot_cvd_breakout": analysis.spot_cvd_breakout,
                 }

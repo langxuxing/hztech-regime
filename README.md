@@ -116,6 +116,8 @@ docker compose up --build
 
 以 **BTC** 为主链，11 类 regime（`macro_frozen_range`、`fake_breakout_wash` 等），详见 `ai_trade_advisor/regime/engine.py`。
 
+**趋势判断业务契约**见 [docs/TREND_JUDGMENT.md](docs/TREND_JUDGMENT.md)。`GET /api/radar` 顶层 `trend_judgment` 为 Dashboard 主信号。
+
 人工标注时，**LLM/规则交易建议**（`trade_advice`）纳入 feedback 打分闭环，与 HMM 等模型一同进入 Leaderboard。
 
 ## 量化状态机（The Quant State Machine）

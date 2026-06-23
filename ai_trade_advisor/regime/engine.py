@@ -86,6 +86,7 @@ class BtcRegimeAnalysis:
     model_comparison: dict[str, Any] | None = None
     model_recommendation: dict[str, Any] | None = None
     model_scores_preview: dict[str, Any] | None = None
+    hmm_confidence_modifier: dict[str, Any] | None = None
     next_regime_label: str | None = None
     changepoint_prob: float | None = None
     in_regime_transition: bool = False
@@ -129,6 +130,7 @@ class BtcRegimeAnalysis:
             "model_comparison": self.model_comparison,
             "model_recommendation": self.model_recommendation,
             "model_scores_preview": self.model_scores_preview,
+            "hmm_confidence_modifier": self.hmm_confidence_modifier,
             "next_regime_label": self.next_regime_label,
             "changepoint_prob": self.changepoint_prob,
             "in_regime_transition": self.in_regime_transition,
@@ -277,6 +279,12 @@ def _attach_triad(df: pd.DataFrame, base: BtcRegimeAnalysis, cfg: AdvisorConfig 
                 use_recommendation=True,
             )
         base.model_comparison = comparison
+
+        if base.models:
+            from ai_trade_advisor.regime.hmm_modifier import apply_hmm_confidence_modifier
+
+            base, hmm_meta = apply_hmm_confidence_modifier(base, base.models)
+            base.hmm_confidence_modifier = hmm_meta
 
         if comparison.get("needs_human_judgment"):
             base.drivers = list(base.drivers) + ["多模型分歧较大 → 建议人工判断"]
