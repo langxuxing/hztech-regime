@@ -12,6 +12,7 @@ from ai_trade_advisor.datasource.ohlcv import load_ohlcv
 from ai_trade_advisor.datasource.spot_cvd import analyze_spot_cvd
 from ai_trade_advisor.features.indicators import donchian_14d, kama_rails
 from ai_trade_advisor.features.macro_calendar_engine import MacroHazardState, evaluate_macro_hazard
+from ai_trade_advisor.regime.labels import REGIME_LABELS
 from ai_trade_advisor.regime.triad.fusion import fuse_regime_triad
 from ai_trade_advisor.regime.models.ensemble import run_all_regime_models
 from ai_trade_advisor.regime.feedback.fusion import fuse_with_leaderboard
@@ -37,20 +38,7 @@ BtcRegimeId = Literal[
     "high_vol_range",
 ]
 
-_REGIME_LABELS: dict[str, str] = {
-    "macro_frozen_range": "宏观熔断 · 强制观望",
-    "high_vol_uptrend": "高波上涨 · 现货 CVD 确认",
-    "fake_breakout_wash": "假突破洗盘 · 缺现货买盘",
-    "high_vol_downtrend": "高波下跌 · 趋势延续",
-    "high_vol_self_heal_range": "高波自愈区间 · CVD 底背离",
-    "low_vol_uptrend": "低波上行 · 趋势延续",
-    "mid_vol_uptrend": "中波上行 · 趋势延续",
-    "low_vol_downtrend": "低波下行 · 趋势延续",
-    "low_vol_range": "低波死寂 · 震荡",
-    "mid_vol_range": "中波震荡 · 等待突破",
-    "high_vol_range": "高波震荡 · 事件驱动",
-}
-
+_REGIME_LABELS = REGIME_LABELS
 
 @dataclass
 class BtcRegimeAnalysis:
@@ -86,7 +74,8 @@ class BtcRegimeAnalysis:
     model_comparison: dict[str, Any] | None = None
     model_recommendation: dict[str, Any] | None = None
     model_scores_preview: dict[str, Any] | None = None
-    hmm_confidence_modifier: dict[str, Any] | None = None
+    hmm_modifier: dict[str, Any] | None = None
+    hmm_disagrees: bool = False
     next_regime_label: str | None = None
     changepoint_prob: float | None = None
     in_regime_transition: bool = False
@@ -130,7 +119,9 @@ class BtcRegimeAnalysis:
             "model_comparison": self.model_comparison,
             "model_recommendation": self.model_recommendation,
             "model_scores_preview": self.model_scores_preview,
-            "hmm_confidence_modifier": self.hmm_confidence_modifier,
+            "hmm_modifier": self.hmm_modifier,
+            "hmm_confidence_modifier": self.hmm_modifier,
+            "hmm_disagrees": self.hmm_disagrees,
             "next_regime_label": self.next_regime_label,
             "changepoint_prob": self.changepoint_prob,
             "in_regime_transition": self.in_regime_transition,
@@ -280,16 +271,22 @@ def _attach_triad(df: pd.DataFrame, base: BtcRegimeAnalysis, cfg: AdvisorConfig 
             )
         base.model_comparison = comparison
 
-        if base.models:
-            from ai_trade_advisor.regime.hmm_modifier import apply_hmm_confidence_modifier
-
-            base, hmm_meta = apply_hmm_confidence_modifier(base, base.models)
-            base.hmm_confidence_modifier = hmm_meta
-
         if comparison.get("needs_human_judgment"):
             base.drivers = list(base.drivers) + ["多模型分歧较大 → 建议人工判断"]
             base.drivers = base.drivers[:14]
+    except Exception as exc:
+        base.drivers = list(base.drivers) + [f"多模型对比跳过: {exc}"]
 
+    if base.models:
+        try:
+            from ai_trade_advisor.regime.hmm_modifier import apply_hmm_confidence_modifier
+
+            base, hmm_meta = apply_hmm_confidence_modifier(base, base.models)
+            base.hmm_modifier = hmm_meta
+        except Exception as exc:
+            base.drivers = list(base.drivers) + [f"HMM 修正跳过: {exc}"]
+
+    try:
         latest = HumanJudgmentStore().latest(cfg.symbol)
         if latest:
             scores = FeedbackStore().scores_for_judgment(latest["id"])
@@ -301,7 +298,7 @@ def _attach_triad(df: pd.DataFrame, base: BtcRegimeAnalysis, cfg: AdvisorConfig 
                     "scores": {s["model_id"]: s["total_score"] for s in instant},
                 }
     except Exception as exc:
-        base.drivers = list(base.drivers) + [f"多模型对比跳过: {exc}"]
+        base.drivers = list(base.drivers) + [f"人工评分预览跳过: {exc}"]
 
     return base
 

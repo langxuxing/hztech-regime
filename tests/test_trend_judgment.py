@@ -7,6 +7,7 @@ import pytest
 from ai_trade_advisor.regime.engine import BtcRegimeAnalysis, _compose_regime
 from ai_trade_advisor.regime.hmm_modifier import apply_hmm_confidence_modifier
 from ai_trade_advisor.regime.trend_judgment import (
+    apply_consensus_confidence_cap,
     build_trend_judgment,
     business_stance,
 )
@@ -25,6 +26,10 @@ def _minimal_btc(**overrides) -> dict:
     }
     base.update(overrides)
     return base
+
+
+def test_build_trend_judgment_none():
+    assert build_trend_judgment(None) is None
 
 
 def test_build_trend_judgment_schema():
@@ -64,17 +69,87 @@ def test_build_trend_judgment_provisional_when_live_differs():
     assert tj["stability"] == "provisional"
 
 
-def test_consensus_misalignment_caps_confidence():
+def test_stability_transition_when_in_regime_transition():
+    tj = build_trend_judgment(_minimal_btc(in_regime_transition=True))
+    assert tj["stability"] == "transition"
+
+
+def test_stability_provisional_on_macro_hazard():
+    tj = build_trend_judgment(_minimal_btc(macro_hazard=True))
+    assert tj["stability"] == "provisional"
+
+
+def test_consensus_opposing_caps_confidence():
     tj = build_trend_judgment(
         _minimal_btc(confidence=0.82),
         consensus={"direction": "down", "label": "偏空", "score": -0.2, "agreement": 0.7},
     )
     assert tj["confidence"] <= 0.55
     assert tj["consensus_capped"] is True
-    assert tj["consensus_alignment"]["aligned"] is False
+    assert tj["consensus_misaligned"] is True
+    assert tj["consensus_alignment"]["opposing"] is True
 
 
-def test_hmm_disagreement_lowers_confidence():
+def test_consensus_neutral_does_not_cap_uptrend():
+    tj = build_trend_judgment(
+        _minimal_btc(confidence=0.82),
+        consensus={"direction": "neutral", "label": "中性"},
+    )
+    assert tj["confidence"] == 0.82
+    assert tj["consensus_capped"] is False
+    assert tj["consensus_misaligned"] is False
+
+
+def test_consensus_already_low_not_marked_capped():
+    conf, misaligned, capped = apply_consensus_confidence_cap(
+        0.40,
+        {"opposing": True, "aligned": False, "consensus_direction": "down"},
+    )
+    assert conf == 0.40
+    assert misaligned is True
+    assert capped is False
+
+
+def test_hmm_disagreement_lowers_confidence_without_transition():
+    analysis = BtcRegimeAnalysis(
+        regime_id="mid_vol_uptrend",
+        regime_label="中波上行",
+        raw_trend="uptrend",
+        vol_bucket="mid_vol",
+        close=100.0,
+        donchian_upper=95,
+        donchian_lower=85,
+        kama=98,
+        kama_upper=99,
+        kama_lower=97,
+        spot_cvd=1.0,
+        spot_cvd_breakout=False,
+        cvd_bullish_divergence=False,
+        spot_premium_bps=None,
+        spot_premium_positive=False,
+        macro_hazard=False,
+        confidence=0.80,
+        in_regime_transition=False,
+    )
+    models = {
+        "hmm": {
+            "raw_trend": "downtrend",
+            "confidence": 0.72,
+            "model_id": "hmm",
+        }
+    }
+    updated, meta = apply_hmm_confidence_modifier(analysis, models)
+    assert meta["applied"] is True
+    assert meta["disagrees"] is True
+    assert meta["reason"] == "trend_disagreement"
+    assert updated.confidence <= 0.55
+    assert updated.in_regime_transition is False
+    assert updated.hmm_disagrees is True
+    assert updated.raw_trend == "uptrend"
+    assert updated.regime_id == "mid_vol_uptrend"
+
+
+def test_hmm_low_confidence_caps_without_disagree():
     analysis = BtcRegimeAnalysis(
         regime_id="mid_vol_uptrend",
         regime_label="中波上行",
@@ -94,18 +169,13 @@ def test_hmm_disagreement_lowers_confidence():
         macro_hazard=False,
         confidence=0.80,
     )
-    models = {
-        "hmm": {
-            "raw_trend": "downtrend",
-            "confidence": 0.72,
-            "model_id": "hmm",
-        }
-    }
+    models = {"hmm": {"raw_trend": "uptrend", "confidence": 0.35}}
     updated, meta = apply_hmm_confidence_modifier(analysis, models)
     assert meta["applied"] is True
-    assert meta["reason"] == "trend_disagreement"
-    assert updated.confidence <= 0.55
-    assert updated.in_regime_transition is True
+    assert meta["reason"] == "hmm_low_confidence"
+    assert meta["disagrees"] is False
+    assert updated.confidence <= 0.60
+    assert updated.hmm_disagrees is False
 
 
 def test_hmm_agreement_keeps_confidence():
@@ -134,6 +204,53 @@ def test_hmm_agreement_keeps_confidence():
     assert updated.confidence == 0.80
 
 
+def test_hmm_missing_or_error_is_noop():
+    analysis = BtcRegimeAnalysis(
+        regime_id="mid_vol_uptrend",
+        regime_label="中波上行",
+        raw_trend="uptrend",
+        vol_bucket="mid_vol",
+        close=100.0,
+        donchian_upper=95,
+        donchian_lower=85,
+        kama=98,
+        kama_upper=99,
+        kama_lower=97,
+        spot_cvd=1.0,
+        spot_cvd_breakout=False,
+        cvd_bullish_divergence=False,
+        spot_premium_bps=None,
+        spot_premium_positive=False,
+        macro_hazard=False,
+        confidence=0.80,
+    )
+    unchanged, meta = apply_hmm_confidence_modifier(analysis, None)
+    assert meta["applied"] is False
+    assert unchanged.confidence == 0.80
+
+    err_models = {"hmm": {"error": "timeout", "raw_trend": "downtrend"}}
+    unchanged2, meta2 = apply_hmm_confidence_modifier(analysis, err_models)
+    assert meta2["applied"] is False
+    assert unchanged2.raw_trend == "uptrend"
+
+
+def test_trend_judgment_no_duplicate_hmm_driver():
+    note = "HMM 趋势分歧: 规则=uptrend, HMM=downtrend → 置信度上限 55%"
+    tj = build_trend_judgment(
+        _minimal_btc(drivers=[note], hmm_disagrees=True),
+        hmm_modifier={"applied": True, "disagrees": True, "note": note},
+    )
+    assert tj["drivers"].count(note) == 1
+
+
+def test_trend_judgment_hmm_disagrees_flag():
+    tj = build_trend_judgment(
+        _minimal_btc(hmm_disagrees=True),
+        hmm_modifier={"disagrees": True, "applied": True},
+    )
+    assert tj["hmm_disagrees"] is True
+
+
 @pytest.mark.parametrize(
     "raw_trend,vol_bucket,cvd_breakout,cvd_div,expected",
     [
@@ -157,8 +274,11 @@ def test_compose_regime_full_matrix(raw_trend, vol_bucket, cvd_breakout, cvd_div
     assert rid == expected
 
 
-def test_business_stance_fake_breakout():
+def test_business_stance_matrix():
     assert "减仓" in business_stance("uptrend", "fake_breakout_wash")
+    assert "谨慎抄底" in business_stance("downtrend", "high_vol_self_heal_range")
+    assert "强制观望" in business_stance("uptrend", "macro_frozen_range")
+    assert "强制观望" in business_stance("downtrend", "macro_frozen_range")
 
 
 def test_radar_bundle_includes_trend_judgment(monkeypatch):
@@ -169,7 +289,9 @@ def test_radar_bundle_includes_trend_judgment(monkeypatch):
 
     fake_dashboard = {
         "symbol": cfg.symbol,
-        "btc_regime": _minimal_btc(),
+        "btc_regime": _minimal_btc(
+            hmm_modifier={"applied": True, "disagrees": False, "note": "HMM ok"},
+        ),
         "regime_confirmation": {
             "dwell_bars": 2,
             "min_dwell_bars": 2,
@@ -208,3 +330,4 @@ def test_radar_bundle_includes_trend_judgment(monkeypatch):
     assert result.get("trend_judgment") is not None
     assert result["trend_judgment"]["trend"] == "uptrend"
     assert result["readiness_tier"] == "demo"
+    assert result["trend_judgment"]["hmm_modifier"]["applied"] is True

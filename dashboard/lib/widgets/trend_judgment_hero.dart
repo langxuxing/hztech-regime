@@ -91,8 +91,15 @@ class TrendJudgmentHero extends StatelessWidget {
                 const StatusBadge(label: '离线演示', color: AppTheme.neutral),
               if (judgment.needsHumanJudgment)
                 const StatusBadge(label: '建议人工判断', color: AppTheme.short),
-              if (judgment.consensusCapped)
-                const StatusBadge(label: '共识分歧', color: AppTheme.neutral),
+              if (judgment.hmmDisagrees)
+                const StatusBadge(label: 'HMM 分歧', color: AppTheme.neutral),
+              if (judgment.consensusMisaligned)
+                StatusBadge(
+                  label: judgment.consensusCapped ? '共识相反' : '共识分歧',
+                  color: AppTheme.neutral,
+                ),
+              if (judgment.inRegimeTransition)
+                const StatusBadge(label: '变点转换期', color: AppTheme.short),
             ],
           ),
           if (judgment.businessStance.isNotEmpty) ...[

@@ -66,8 +66,25 @@ def run_health_check(cfg: AdvisorConfig | None = None) -> dict:
                     "title": "趋势未确认",
                     "detail": f"live={tj.get('live_regime_id')} confirmed={tj.get('confirmed_regime_id')}",
                 })
+            if tj.get("hmm_disagrees"):
+                findings.append({
+                    "severity": "info",
+                    "title": "HMM 趋势分歧",
+                    "detail": "hmm_disagrees=true",
+                })
 
-    history = RegimeHistoryStore().recent(symbol=cfg.symbol, limit=48)
+    history: list[dict] = []
+    try:
+        history = RegimeHistoryStore().recent(symbol=cfg.symbol, limit=48)
+    except Exception as exc:
+        findings.append({
+            "severity": "high",
+            "title": "Regime 历史查询失败",
+            "detail": str(exc),
+        })
+        if status == "ok":
+            status = "degraded"
+
     flips = 0
     prev = None
     for row in reversed(history):
@@ -79,7 +96,7 @@ def run_health_check(cfg: AdvisorConfig | None = None) -> dict:
         findings.append({
             "severity": "medium",
             "title": "Regime 翻转频繁",
-            "detail": f"近 48 条历史翻转 {flips} 次",
+            "detail": f"近 {len(history)} 条历史翻转 {flips} 次",
         })
         if status == "ok":
             status = "degraded"
@@ -91,7 +108,8 @@ def run_health_check(cfg: AdvisorConfig | None = None) -> dict:
         "snapshot_key": key,
         "snapshot_present": bundle is not None,
         "trend_judgment": (bundle or {}).get("trend_judgment"),
-        "regime_flips_48h": flips,
+        "regime_flips_recent": flips,
+        "regime_history_size": len(history),
         "findings": findings,
     }
 
@@ -102,7 +120,11 @@ def main() -> int:
     out = get_data_root() / "exports" / "reviews" / "trend_health_latest.json"
     out.parent.mkdir(parents=True, exist_ok=True)
     out.write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
-    return 0 if report["status"] != "critical" else 1
+    if report["status"] == "critical":
+        return 1
+    if report["status"] == "degraded":
+        return 2
+    return 0
 
 
 if __name__ == "__main__":

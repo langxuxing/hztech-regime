@@ -15,7 +15,9 @@ class TrendJudgment {
     this.dataTier = 'unknown',
     this.needsHumanJudgment = false,
     this.inRegimeTransition = false,
+    this.hmmDisagrees = false,
     this.consensusCapped = false,
+    this.consensusMisaligned = false,
     this.modelAgreement,
   });
 
@@ -34,7 +36,9 @@ class TrendJudgment {
         dataTier: json['data_tier'] as String? ?? 'unknown',
         needsHumanJudgment: json['needs_human_judgment'] as bool? ?? false,
         inRegimeTransition: json['in_regime_transition'] as bool? ?? false,
+        hmmDisagrees: json['hmm_disagrees'] as bool? ?? false,
         consensusCapped: json['consensus_capped'] as bool? ?? false,
+        consensusMisaligned: json['consensus_misaligned'] as bool? ?? false,
         modelAgreement: (json['model_agreement'] as num?)?.toDouble(),
       );
 
@@ -86,7 +90,9 @@ class TrendJudgment {
   final String dataTier;
   final bool needsHumanJudgment;
   final bool inRegimeTransition;
+  final bool hmmDisagrees;
   final bool consensusCapped;
+  final bool consensusMisaligned;
   final double? modelAgreement;
 
   bool get isConfirmed => stability == 'confirmed';

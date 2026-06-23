@@ -136,7 +136,7 @@ def build_radar_bundle(
         regime_confirmation=dash.get("regime_confirmation"),
         consensus=consensus,
         data_tier=readiness_tier,
-        hmm_modifier=btc.get("hmm_confidence_modifier"),
+        hmm_modifier=btc.get("hmm_modifier") or btc.get("hmm_confidence_modifier"),
     )
 
     return {

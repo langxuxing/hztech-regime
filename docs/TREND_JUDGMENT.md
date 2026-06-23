@@ -72,9 +72,15 @@ BTC 30m OHLCV
 
 ## HMM 第二意见
 
-- HMM `raw_trend` 与规则 `raw_trend` 不一致 → `confidence ≤ 0.55`，`in_regime_transition = true`
+- HMM `raw_trend` 与规则 `raw_trend` 不一致 → `confidence ≤ 0.55`，`hmm_disagrees = true`
 - HMM 置信度 < 50% → `confidence ≤ 0.60`
-- **不修改** `trend` 或 `regime_id`
+- **不修改** `trend`、`regime_id` 或 `in_regime_transition`（BOCPD/triad 专用）
+
+## 外部共识
+
+- `direction=up/down` 与内部趋势明确相反 → 可能裁剪置信度至 0.55（`consensus_capped=true`）
+- `direction=neutral` 不触发压制（`consensus_misaligned=false`）
+- `consensus_misaligned` 表示存在方向性分歧；`consensus_capped` 仅在实际降低了置信度时为 true
 
 ## 运维脚本
 

@@ -119,8 +119,10 @@ def run_regime_backtest(
             bars_5m=min(bars * 6, 5000),
         )
 
-    if len(df_30m) < warmup + 20:
-        raise ValueError(f"30m 数据不足: {len(df_30m)} < warmup+20")
+    if len(df_30m) < warmup + max(horizons) + 1:
+        raise ValueError(
+            f"30m 数据不足: {len(df_30m)} < warmup({warmup}) + max(horizons)({max(horizons)}) + 1"
+        )
 
     macro_off = MacroHazardState(macro_hazard_flag=False, active_events=[])
     closes = df_30m["close"].astype(float)
@@ -175,8 +177,10 @@ def run_regime_backtest(
             if vals:
                 forward_returns[rid][f"h{h}"] = round(float(np.mean(vals)) * 100, 4)
 
+    bars_evaluated = max(0, len(df_30m) - warmup - max(horizons))
+
     return RegimeBacktestResult(
-        bars_evaluated=len(df_30m) - warmup - max(horizons),
+        bars_evaluated=bars_evaluated,
         warmup_bars=warmup,
         cvd_source=cvd_source,
         regime_counts=regime_counts,

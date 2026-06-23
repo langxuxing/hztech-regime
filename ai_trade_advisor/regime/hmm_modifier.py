@@ -4,17 +4,17 @@ from __future__ import annotations
 
 from typing import Any, Protocol
 
-
-class _TrendAnalysis(Protocol):
-    raw_trend: str
-    confidence: float
-    in_regime_transition: bool
-    drivers: list[str]
-
-
 _HMM_DISAGREE_CAP = 0.55
 _HMM_LOW_CONF_CAP = 0.60
 _HMM_LOW_CONF_THRESHOLD = 0.50
+
+
+class _TrendAnalysis(Protocol):
+    raw_trend: str
+    regime_id: str
+    confidence: float
+    drivers: list[str]
+    hmm_disagrees: bool
 
 
 def apply_hmm_confidence_modifier(
@@ -22,12 +22,13 @@ def apply_hmm_confidence_modifier(
     models: dict[str, Any] | None,
 ) -> tuple[Any, dict[str, Any]]:
     """
-    规则引擎趋势为主；HMM 分歧时降低置信度并标记转换期。
+    规则引擎趋势为主；HMM 分歧时降低置信度并标记 hmm_disagrees。
 
-    不修改 raw_trend / regime_id，仅影响 confidence 与 in_regime_transition。
+    不修改 raw_trend / regime_id / in_regime_transition。
     """
     meta: dict[str, Any] = {
         "applied": False,
+        "disagrees": False,
         "reason": None,
         "hmm_trend": None,
         "rule_trend": analysis.raw_trend,
@@ -50,8 +51,9 @@ def apply_hmm_confidence_modifier(
 
     if hmm_trend != analysis.raw_trend:
         analysis.confidence = min(analysis.confidence, _HMM_DISAGREE_CAP)
-        analysis.in_regime_transition = True
+        analysis.hmm_disagrees = True
         meta["applied"] = True
+        meta["disagrees"] = True
         meta["reason"] = "trend_disagreement"
         note = f"HMM 趋势分歧: 规则={analysis.raw_trend}, HMM={hmm_trend} → 置信度上限 {_HMM_DISAGREE_CAP:.0%}"
     elif hmm_conf < _HMM_LOW_CONF_THRESHOLD:

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any, Literal
 
-from ai_trade_advisor.regime.engine import _REGIME_LABELS
+from ai_trade_advisor.regime.labels import REGIME_LABELS
 
 TrendDirection = Literal["uptrend", "downtrend", "range"]
 Stability = Literal["confirmed", "provisional", "transition"]
@@ -14,6 +14,8 @@ _TREND_LABELS: dict[str, str] = {
     "downtrend": "下跌",
     "range": "震荡",
 }
+
+_CONSENSUS_CAP = 0.55
 
 # 业务决策矩阵（趋势 × Regime → 建议姿态）
 _BUSINESS_STANCE: dict[tuple[str, str], str] = {
@@ -73,12 +75,20 @@ def _consensus_alignment(trend: str, consensus: dict[str, Any] | None) -> dict[s
     if not consensus:
         return None
     direction = str(consensus.get("direction") or "neutral").lower()
-    mapped = {"up": "uptrend", "down": "downtrend", "neutral": "range"}.get(direction, "range")
-    aligned = mapped == trend or (mapped == "range" and trend == "range")
+    trend_map = {"up": "uptrend", "down": "downtrend"}
+    mapped = trend_map.get(direction)
+    # neutral 视为无明确反对，不触发压制
+    if direction == "neutral" or mapped is None:
+        opposing = False
+        aligned = True
+    else:
+        opposing = mapped != trend
+        aligned = not opposing
     return {
         "consensus_direction": direction,
         "consensus_label": consensus.get("label"),
         "aligned": aligned,
+        "opposing": opposing,
         "score": consensus.get("score"),
         "agreement": consensus.get("agreement"),
     }
@@ -87,11 +97,27 @@ def _consensus_alignment(trend: str, consensus: dict[str, Any] | None) -> dict[s
 def apply_consensus_confidence_cap(
     confidence: float,
     alignment: dict[str, Any] | None,
-) -> tuple[float, bool]:
-    """内部趋势与外部共识不一致时，置信度上限 0.55。"""
-    if alignment and not alignment.get("aligned"):
-        return min(confidence, 0.55), True
-    return confidence, False
+) -> tuple[float, bool, bool]:
+    """
+    外部共识与内部趋势明确相反时裁剪置信度。
+
+    返回 (confidence, consensus_misaligned, consensus_capped)。
+    consensus_capped 仅在实际降低了置信度时为 True。
+    """
+    if not alignment or not alignment.get("opposing"):
+        return confidence, False, False
+    before = confidence
+    after = min(confidence, _CONSENSUS_CAP)
+    return after, True, after < before
+
+
+def _resolve_hmm_modifier(btc_regime: dict[str, Any]) -> dict[str, Any] | None:
+    return btc_regime.get("hmm_modifier") or btc_regime.get("hmm_confidence_modifier")
+
+
+def _append_driver(drivers: list[str], note: str) -> None:
+    if note and note not in drivers:
+        drivers.append(note)
 
 
 def build_trend_judgment(
@@ -110,25 +136,32 @@ def build_trend_judgment(
     if not btc_regime:
         return None
 
+    hmm_modifier = hmm_modifier or _resolve_hmm_modifier(btc_regime)
+
     trend = str(btc_regime.get("raw_trend") or "range")
     tech_trend = str(btc_regime.get("tech_trend") or trend)
     regime_id = str(btc_regime.get("regime_id") or "mid_vol_range")
     confidence = float(btc_regime.get("confidence") or 0.5)
     stability = _stability_from_confirmation(btc_regime, regime_confirmation)
     alignment = _consensus_alignment(trend, consensus)
-    confidence, consensus_capped = apply_consensus_confidence_cap(confidence, alignment)
+    confidence, consensus_misaligned, consensus_capped = apply_consensus_confidence_cap(
+        confidence, alignment
+    )
 
     comparison = btc_regime.get("model_comparison") or {}
     needs_human = bool(comparison.get("needs_human_judgment"))
+    hmm_disagrees = bool(
+        btc_regime.get("hmm_disagrees") or (hmm_modifier or {}).get("disagrees")
+    )
 
     combined = (regime_confirmation or btc_regime.get("confirmation") or {}).get("combined") or {}
     live_regime_id = combined.get("live_regime_id") or btc_regime.get("live_regime_id")
 
     drivers = list(btc_regime.get("drivers") or [])[:8]
     if consensus_capped:
-        drivers.append("外部趋势共识与内部判断不一致 → 置信度上限 55%")
-    if hmm_modifier and hmm_modifier.get("applied"):
-        drivers.append(str(hmm_modifier.get("note") or "HMM 修正已应用"))
+        _append_driver(drivers, "外部趋势共识与内部判断相反 → 置信度上限 55%")
+    elif consensus_misaligned:
+        _append_driver(drivers, "外部趋势共识与内部判断存在分歧")
 
     return {
         "trend": trend,
@@ -137,7 +170,7 @@ def build_trend_judgment(
         "tech_trend_label": _TREND_LABELS.get(tech_trend, tech_trend),
         "confidence": round(confidence, 3),
         "regime_id": regime_id,
-        "regime_label": btc_regime.get("regime_label") or _REGIME_LABELS.get(regime_id, regime_id),
+        "regime_label": btc_regime.get("regime_label") or REGIME_LABELS.get(regime_id, regime_id),
         "dashboard_regime": btc_regime.get("dashboard_regime"),
         "stability": stability,
         "business_stance": business_stance(trend, regime_id),
@@ -145,6 +178,7 @@ def build_trend_judgment(
         "data_tier": data_tier,
         "needs_human_judgment": needs_human,
         "in_regime_transition": bool(btc_regime.get("in_regime_transition")),
+        "hmm_disagrees": hmm_disagrees,
         "changepoint_prob": btc_regime.get("changepoint_prob"),
         "live_regime_id": live_regime_id,
         "confirmed_regime_id": combined.get("confirmed_regime_id") or regime_id,
@@ -156,6 +190,7 @@ def build_trend_judgment(
             "derivative_votes_bear": (btc_regime.get("derivatives_trend") or {}).get("votes_bear"),
         },
         "consensus_alignment": alignment,
+        "consensus_misaligned": consensus_misaligned,
         "consensus_capped": consensus_capped,
         "hmm_modifier": hmm_modifier,
         "model_agreement": comparison.get("agreement_ratio"),
