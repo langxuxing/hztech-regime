@@ -24,8 +24,74 @@ SYNC_ON_START="${SYNC_ON_START:-0}"
 BTC_1M_INTERVAL_SEC="${BTC_1M_INTERVAL_SEC:-300}"
 BTC_1M_ON_START="${BTC_1M_ON_START:-1}"
 
+# 统一数据调度器（scripts/start-data-scheduler.sh）
+SCHED_BTC_1M_SEC="${SCHED_BTC_1M_SEC:-${BTC_1M_INTERVAL_SEC}}"
+SCHED_EVENTS_SEC="${SCHED_EVENTS_SEC:-300}"
+SCHED_SYNC_HOUR="${SCHED_SYNC_HOUR:-${SYNC_HOUR}}"
+SCHED_SYNC_MINUTE="${SCHED_SYNC_MINUTE:-${SYNC_MINUTE}}"
+SCHED_SYNC_TIMEZONE="${SCHED_SYNC_TIMEZONE:-${SYNC_TIMEZONE}}"
+SCHED_ON_START="${SCHED_ON_START:-1}"
+DATA_SCHEDULER_LOG="${PID_DIR}/data-scheduler.log"
+
 log() { printf '[%s] %s\n' "$(date '+%H:%M:%S')" "$*"; }
 die() { log "ERROR: $*"; exit 1; }
+
+scheduler_config_line() {
+  printf 'btc_1m=%ss events=%ss sync=%02d:%02d %s on_start=%s' \
+    "$SCHED_BTC_1M_SEC" "$SCHED_EVENTS_SEC" "$SCHED_SYNC_HOUR" "$SCHED_SYNC_MINUTE" \
+    "$SCHED_SYNC_TIMEZONE" "$SCHED_ON_START"
+}
+
+print_scheduler_tasks() {
+  [[ -f "$VENV/bin/activate" ]] || return 0
+  # shellcheck disable=SC1091
+  source "$VENV/bin/activate"
+  python - <<'PY' 2>/dev/null || true
+from ai_trade_advisor.datasource.scheduler_meta import SchedulerMetaStore
+
+meta = SchedulerMetaStore().status()
+tasks = meta.get("tasks") or {}
+if not tasks:
+    print("  (尚无任务执行记录)")
+else:
+    for name in sorted(tasks):
+        t = tasks[name]
+        ok = "ok" if t.get("last_ok") else "FAIL"
+        dur = t.get("duration_ms")
+        dur_s = f"{dur}ms" if dur is not None else "-"
+        detail = t.get("detail") or t.get("last_error") or ""
+        print(f"  {name}: {ok} @ {t.get('last_run_at', '-')} ({dur_s}) {detail}")
+PY
+}
+
+tail_scheduler_log() {
+  local n="${1:-8}"
+  [[ -f "$DATA_SCHEDULER_LOG" ]] || return 0
+  tail -n "$n" "$DATA_SCHEDULER_LOG" | while IFS= read -r line; do
+    log "  $line"
+  done
+}
+
+wait_scheduler_first_run() {
+  local max_wait="${1:-45}"
+  local i
+  for ((i = 1; i <= max_wait; i++)); do
+    if [[ -f "$VENV/bin/activate" ]]; then
+      # shellcheck disable=SC1091
+      source "$VENV/bin/activate"
+      if python - <<'PY' 2>/dev/null
+from ai_trade_advisor.datasource.scheduler_meta import SchedulerMetaStore
+tasks = SchedulerMetaStore().all_tasks()
+raise SystemExit(0 if "btc_1m" in tasks and "events" in tasks else 1)
+PY
+      then
+        return 0
+      fi
+    fi
+    sleep 1
+  done
+  return 1
+}
 
 ensure_pid_dir() {
   mkdir -p "$PID_DIR"
@@ -41,6 +107,18 @@ ensure_env() {
   if [[ ! -f "$ROOT/.env" ]]; then
     cp "$ROOT/.env.example" "$ROOT/.env"
     log "已从 .env.example 创建 .env"
+  fi
+  if [[ -f "$ROOT/.env" ]]; then
+    set -a
+    # shellcheck disable=SC1091
+    source "$ROOT/.env" 2>/dev/null || true
+    set +a
+    SCHED_BTC_1M_SEC="${SCHED_BTC_1M_SEC:-${BTC_1M_INTERVAL_SEC:-300}}"
+    SCHED_EVENTS_SEC="${SCHED_EVENTS_SEC:-300}"
+    SCHED_SYNC_HOUR="${SCHED_SYNC_HOUR:-${SYNC_HOUR:-8}}"
+    SCHED_SYNC_MINUTE="${SCHED_SYNC_MINUTE:-${SYNC_MINUTE:-0}}"
+    SCHED_SYNC_TIMEZONE="${SCHED_SYNC_TIMEZONE:-${SYNC_TIMEZONE:-Asia/Shanghai}}"
+    SCHED_ON_START="${SCHED_ON_START:-1}"
   fi
 }
 

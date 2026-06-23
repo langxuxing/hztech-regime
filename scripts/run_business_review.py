@@ -19,11 +19,10 @@ if str(ROOT) not in sys.path:
 
 from ai_trade_advisor.config import AdvisorConfig
 from ai_trade_advisor.datasource.paths import get_data_root, get_ohlcv_dir, get_macro_root
-from ai_trade_advisor.datasource.ohlcv import load_ohlcv, resample_from_1m
-from ai_trade_advisor.layers.l3_confirmation.regime_stabilizer import (
-    DEFAULT_MIN_DWELL_BARS,
-    TRANSITION_PENALTY_CONFIDENCE,
-)
+from ai_trade_advisor.datasource.ohlcv import get_last_ohlcv_source, load_ohlcv, resample_from_1m
+from ai_trade_advisor.layers.l1_ingestion import bundle, market
+from ai_trade_advisor.layers.l3_confirmation.regime_stabilizer import DEFAULT_MIN_DWELL_BARS
+from ai_trade_advisor.readiness import check_readiness
 from dotenv import load_dotenv
 
 load_dotenv(ROOT / ".env")
@@ -155,32 +154,37 @@ def audit_ohlcv_local(report: ReviewReport) -> None:
 
 
 def audit_pipeline_data_path(report: ReviewReport) -> None:
-    """主链路 load_ohlcv 是否使用本地数据。"""
-    import inspect
-
-    from ai_trade_advisor import datasource
-
-    source = inspect.getsource(datasource.ohlcv.load_ohlcv)
-    uses_local_btc = "get_ohlcv_dir" in source or "btc_usdt_swap" in source
+    """主链路 load_ohlcv 运行时数据来源。"""
+    cfg = AdvisorConfig.from_env()
+    try:
+        df = load_ohlcv(cfg)
+        source = get_last_ohlcv_source()
+        ok = source == "local_btc_1m_resample" and len(df) >= 50
+    except Exception as exc:
+        source = None
+        ok = False
+        err = str(exc)
+    else:
+        err = None
 
     section = {
-        "load_ohlcv_uses_local_btc": uses_local_btc,
+        "ohlcv_source": source,
+        "bars": len(df) if source else 0,
         "local_1m_scheduler": (ROOT / "scripts" / "btc_1m_scheduler.py").exists(),
-        "default_exchange": AdvisorConfig.from_env().exchange,
+        "default_exchange": cfg.exchange,
+        "allow_ccxt_fallback": cfg.allow_ccxt_ohlcv_fallback,
     }
+    if err:
+        section["error"] = err
     report.sections["pipeline_data_path"] = section
 
-    if not uses_local_btc and section["local_1m_scheduler"]:
+    if not ok:
         report.add(
             Finding(
-                severity="critical",
+                severity="critical" if not cfg.allow_ccxt_ohlcv_fallback else "high",
                 category="data",
-                title="训练-服务数据割裂",
-                detail=(
-                    "scripts 持续下载 OKX mark 1m 到 data/OHLCV/Btc，"
-                    "但 load_ohlcv() 实盘默认 fetch_ohlcv_ccxt(Binance 30m)，"
-                    "回测/历史与线上数据源不一致"
-                ),
+                title="本地 BTC OHLCV 未作为主数据源",
+                detail=err or f"load_ohlcv source={source}，期望 local_btc_1m_resample",
                 evidence=section,
             )
         )
@@ -188,70 +192,43 @@ def audit_pipeline_data_path(report: ReviewReport) -> None:
 
 def audit_env_readiness(report: ReviewReport) -> None:
     cfg = AdvisorConfig.from_env()
-
-    def _set(name: str) -> bool:
-        return bool(os.getenv(name, "").strip())
-
-    keys = {
-        "COINGLASS_API_KEY": _set("COINGLASS_API_KEY"),
-        "X_BEARER_TOKEN": _set("X_BEARER_TOKEN"),
-        "AI_API_KEY": _set("AI_API_KEY") or _set("OPENAI_API_KEY"),
-        "BINANCE_CONFIG_PATH": bool(cfg.binance_config_path) or _set("BINANCE_API_KEY"),
-    }
+    readiness = check_readiness(cfg)
 
     etf_dir = cfg.etfdata_dir or (get_data_root() / "ETF")
     macro_dir = get_macro_root()
     btc_dir = get_ohlcv_dir("Btc")
 
-    data_layout = {
-        "data_root": str(get_data_root()),
-        "etf_csv_count": len(list(etf_dir.rglob("*.csv"))) if etf_dir.exists() else 0,
-        "macro_subdirs": [p.name for p in macro_dir.iterdir() if p.is_dir()] if macro_dir.exists() else [],
-        "btc_1m_files": len(list(btc_dir.glob("btc_usdt_swap_mark_1m_*.csv"))),
-    }
-
-    # capital flows quality simulation
-    from ai_trade_advisor.datasource.capital_flows import build_capital_flows
-
-    try:
-        flows = build_capital_flows(cfg)
-        cf_quality = flows.data_quality
-    except Exception as exc:
-        cf_quality = f"error: {exc}"
-
-    event_demo = cfg.event_demo_mode
-    readiness = "production"
-    if not keys["COINGLASS_API_KEY"]:
-        readiness = "degraded"
-    if event_demo or (not keys["X_BEARER_TOKEN"] and cfg.event_demo_mode):
-        readiness = "demo"
-
     section = {
-        "api_keys_configured": keys,
-        "capital_flows_quality": cf_quality,
-        "readiness_tier": readiness,
-        "data_layout": data_layout,
+        "readiness": readiness.to_dict(),
+        "data_layout": {
+            "data_root": str(get_data_root()),
+            "etf_csv_count": len(list(etf_dir.rglob("*.csv"))) if etf_dir.exists() else 0,
+            "macro_subdirs": [p.name for p in macro_dir.iterdir() if p.is_dir()]
+            if macro_dir.exists()
+            else [],
+            "btc_1m_files": len(list(btc_dir.glob("btc_usdt_swap_mark_1m_*.csv"))),
+        },
         "use_deribit_gex": cfg.use_deribit_gex,
         "use_taker_cvd": cfg.use_taker_cvd,
     }
     report.sections["env_readiness"] = section
 
-    if not keys["COINGLASS_API_KEY"]:
+    if readiness.tier == "demo":
         report.add(
             Finding(
                 severity="medium",
                 category="data",
-                title="CoinGlass API Key 未配置",
-                detail="资金流/日历质量降级为 partial，ETF 纠偏与 netflow 能力受限",
+                title=f"环境就绪度: {readiness.tier}",
+                detail="; ".join(readiness.notes[:4]) or "缺少生产 API Key 或本地数据",
             )
         )
-    if cf_quality in ("partial", "free_only"):
+    elif readiness.tier == "degraded":
         report.add(
             Finding(
-                severity="medium",
+                severity="low",
                 category="data",
-                title=f"资金流数据质量: {cf_quality}",
-                detail="L2 ETF 慢变量纠偏可能跳过或不可靠",
+                title=f"环境就绪度: {readiness.tier}",
+                detail="; ".join(readiness.notes[:3]) or "部分数据源降级",
             )
         )
 
@@ -261,58 +238,49 @@ def audit_config_conflicts(report: ReviewReport) -> None:
     section = {
         "regime_min_dwell_bars_config": cfg.regime_min_dwell_bars,
         "stabilizer_default_min_dwell": DEFAULT_MIN_DWELL_BARS,
+        "dwell_aligned": cfg.regime_min_dwell_bars == DEFAULT_MIN_DWELL_BARS,
         "regime_transition_penalty_config": cfg.regime_transition_penalty,
-        "stabilizer_transition_penalty_confidence": TRANSITION_PENALTY_CONFIDENCE,
         "production_path": "orchestrator → run_l3_pipeline → confirm_regime_state",
-        "backtest_path": "run_confirmation → stabilize_regime (time-based dwell)",
+        "backtest_path": "run_confirmation → confirm_regime_state (fallback: stabilize_regime)",
     }
     report.sections["config_l3"] = section
 
-    if cfg.regime_min_dwell_bars != DEFAULT_MIN_DWELL_BARS:
+    if not section["dwell_aligned"]:
         report.add(
             Finding(
                 severity="medium",
                 category="signal",
                 title="L3 驻留周期默认值不一致",
                 detail=(
-                    f"生产路径 confirm_regime_state 使用 config={cfg.regime_min_dwell_bars}；"
-                    f"stabilize_regime 默认常量={DEFAULT_MIN_DWELL_BARS}（仅 run_confirmation 回测路径）"
+                    f"config={cfg.regime_min_dwell_bars} vs "
+                    f"stabilize_regime 默认={DEFAULT_MIN_DWELL_BARS}"
                 ),
                 evidence=section,
             )
         )
 
-    report.add(
-        Finding(
-            severity="medium",
-            category="signal",
-            title="L3 双实现路径",
-            detail=(
-                "生产 orchestrator 使用 confirm_regime_state（bar 计数 dwell）；"
-                "run_confirmation 使用 stabilize_regime（wall-clock 计时 + 邻接矩阵惩罚 0.78）"
-            ),
-            evidence=section,
-        )
-    )
-
 
 def audit_duplicate_ticker(report: ReviewReport) -> None:
     import inspect
 
-    from ai_trade_advisor.layers.l1_ingestion import bundle, market
-
     bundle_src = inspect.getsource(bundle.run_ingestion)
     market_src = inspect.getsource(market.build_market_features)
-    double = "fetch_live_ticker" in bundle_src and "fetch_live_ticker" in market_src
+    accepts_ticker_param = "ticker:" in market_src or "ticker:" in market_src.replace(" ", "")
+    bundle_passes_ticker = "ticker=ticker" in bundle_src
 
-    report.sections["duplicate_api"] = {"double_ticker_fetch": double}
-    if double:
+    section = {
+        "market_accepts_ticker_param": accepts_ticker_param,
+        "bundle_passes_ticker": bundle_passes_ticker,
+    }
+    report.sections["duplicate_api"] = section
+
+    if not bundle_passes_ticker:
         report.add(
             Finding(
                 severity="low",
                 category="data_cleaning",
-                title="Ticker 重复拉取",
-                detail="run_ingestion 与 build_market_features 各调用 fetch_live_ticker，可能导致价格时间戳不一致",
+                title="Ticker 未从 bundle 注入 market 层",
+                detail="run_ingestion 与 build_market_features 可能重复拉取 ticker",
             )
         )
 
@@ -402,6 +370,8 @@ def audit_models_on_local_data(report: ReviewReport) -> None:
 def run_pytest(report: ReviewReport) -> None:
     tests = [
         "tests/test_data_paths.py",
+        "tests/test_ohlcv_local.py",
+        "tests/test_readiness.py",
         "tests/test_layers.py",
         "tests/test_regime_confirmation.py",
         "tests/test_regime_models.py",

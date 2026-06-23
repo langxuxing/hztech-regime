@@ -5,6 +5,7 @@ import time
 from datetime import datetime, timezone
 from typing import Any, Callable
 
+from ai_trade_advisor.datasource.funding_snapshot import FundingSnapshot, fetch_funding_snapshot
 from ai_trade_advisor.datasource.http_client import get_json
 from ai_trade_advisor.forecast.models import PredictionDirection, PredictionSignal
 
@@ -176,29 +177,37 @@ def fetch_binance_taker_flow() -> PredictionSignal:
 
 
 def fetch_binance_funding() -> PredictionSignal:
-    """Binance 永续资金费率 — 杠杆方向与拥挤度。"""
+    """兼容旧接口：走统一 funding snapshot。"""
+    from ai_trade_advisor.config import AdvisorConfig
+
     try:
-        row = get_json(
-            "https://fapi.binance.com/fapi/v1/premiumIndex",
-            params={"symbol": "BTCUSDT"},
-        )
-        rate = float(row["lastFundingRate"])
-        mark = float(row.get("markPrice", 0))
-        # 正费率：多头拥挤；负费率：空头拥挤
-        score = _clamp(rate * 8000)
-        conf = 0.45 + min(0.35, abs(rate) * 12000)
-        pct = rate * 100
-        return _signal(
-            source="binance_funding",
-            category="derivatives",
-            score=score,
-            confidence=conf,
-            horizon="8h",
-            label=f"资金费率 {pct:.4f}%",
-            raw={"lastFundingRate": rate, "markPrice": mark},
-        )
+        cfg = AdvisorConfig.from_env()
+        snap = fetch_funding_snapshot(cfg, coinglass_api_key=cfg.coinglass_api_key)
+        return funding_to_prediction_signal(snap)
     except Exception as exc:
         return _failed("binance_funding", "derivatives", "8h", str(exc))
+
+
+def funding_to_prediction_signal(snap: FundingSnapshot) -> PredictionSignal:
+    """将统一 funding 快照转为趋势共识信号（单一 funding 源）。"""
+    rate = snap.rate
+    score = _clamp(rate * 8000)
+    conf = 0.45 + min(0.35, abs(rate) * 12000)
+    if snap.cross_exchange_avg is not None:
+        conf = min(0.92, conf + 0.05)
+    pct = rate * 100
+    label = f"资金费率 {pct:.4f}%"
+    if snap.cross_exchange_avg is not None:
+        label += f" · 跨所均 {snap.cross_exchange_avg * 100:.4f}%"
+    return _signal(
+        source="funding_snapshot",
+        category="derivatives",
+        score=score,
+        confidence=conf,
+        horizon="8h",
+        label=label,
+        raw=snap.to_dict(),
+    )
 
 
 def fetch_okx_ls_ratio() -> PredictionSignal:
@@ -315,7 +324,6 @@ DEFAULT_FETCHERS: list[tuple[str, SourceFetcher]] = [
     ("binance_top_trader", fetch_binance_top_trader_ls),
     ("binance_global", fetch_binance_global_ls),
     ("binance_taker", fetch_binance_taker_flow),
-    ("binance_funding", fetch_binance_funding),
     ("okx_account_ratio", fetch_okx_ls_ratio),
     ("polymarket_15m", fetch_polymarket_15m),
 ]

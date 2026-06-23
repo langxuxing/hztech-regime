@@ -51,11 +51,9 @@ class DerivativesFlowStrip extends StatelessWidget {
           if (cvd != null)
             MetricChip(
               label: 'CVD',
-              value: cvd.toString(),
-              color: cvd.toString().contains('bull') ? AppTheme.long : AppTheme.textSecondary,
+              value: cvdBreak ? '真突破' : cvd.toString(),
+              color: cvd.toString().contains('bull') || cvdBreak ? AppTheme.long : AppTheme.textSecondary,
             ),
-          if (cvdBreak)
-            const MetricChip(label: 'CVD', value: '真突破', color: AppTheme.long),
           if (etfZ != null)
             MetricChip(
               label: 'ETF Z',

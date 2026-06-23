@@ -34,7 +34,6 @@ class _DashboardScreenState extends State<DashboardScreen> {
   bool _refreshing = false;
   bool _apiHealthy = false;
   List<String> _errors = [];
-  bool _useMock = false;
   RadarTab _tab = RadarTab.wallboard;
   final Set<RadarTab> _visitedTabs = {RadarTab.wallboard};
 
@@ -83,11 +82,10 @@ class _DashboardScreenState extends State<DashboardScreen> {
       if (!deepScanEvents) _errors = [];
     });
 
-    final healthy = _useMock ? true : await _api.checkHealth();
+    final healthy = await _api.checkHealth();
 
     try {
       final result = await _api.loadRadar(
-        useMock: _useMock,
         deepScanEvents: deepScanEvents,
       );
       if (!mounted) return;
@@ -105,7 +103,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
         _regimeHistory = result.regimeHistory;
         _unifiedEvents = unified;
         _errors = result.errors;
-        _apiHealthy = healthy || _useMock;
+        _apiHealthy = healthy;
         _loading = false;
         _refreshing = false;
       });
@@ -113,7 +111,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
       if (!mounted) return;
       setState(() {
         if (!hasData) _data = null;
-        _errors = ['数据加载失败: $e', if (!_useMock) '请确认 API 已启动且本地 BTC 数据已下载'];
+        _errors = ['数据加载失败: $e', '请确认 API 已启动且本地 BTC 数据已下载'];
         _apiHealthy = false;
         _loading = false;
         _refreshing = false;
@@ -137,32 +135,14 @@ class _DashboardScreenState extends State<DashboardScreen> {
       appBar: AppBar(
         title: Text(current.title),
         actions: [
-          if (_useMock)
-            const Padding(
-              padding: EdgeInsets.only(right: 8),
-              child: Center(
-                child: Text(
-                  '演示数据',
-                  style: TextStyle(fontSize: 11, color: AppTheme.neutral),
-                ),
-              ),
-            ),
           PopupMenuButton<String>(
             icon: const Icon(Icons.more_vert_rounded),
             onSelected: (v) {
-              if (v == 'demo') {
-                setState(() => _useMock = !_useMock);
-                _refresh();
-              } else if (v == 'deep_scan') {
+              if (v == 'deep_scan') {
                 _refresh(deepScanEvents: true);
               }
             },
             itemBuilder: (_) => [
-              CheckedPopupMenuItem(
-                value: 'demo',
-                checked: _useMock,
-                child: const Text('演示模式'),
-              ),
               const PopupMenuItem(
                 value: 'deep_scan',
                 child: Text('深度扫描事件'),
@@ -296,7 +276,6 @@ class _DashboardScreenState extends State<DashboardScreen> {
                 isRefreshing: _refreshing,
                 onRefresh: () => _refresh(),
                 api: _api,
-                useMock: _useMock,
               ),
             ) ??
             const SizedBox.shrink(),

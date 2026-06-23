@@ -12,7 +12,7 @@ from ai_trade_advisor.datasource.macro_fetch import fetch_and_save_all
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
-        description="爬取宏观指标 (M2/ISM/PPI/基准利率/CPI/非农) 并写入本地 data/macro/"
+        description="爬取宏观指标 (M2/制造业活动/PPI/基准利率/CPI/非农) 并写入本地 data/macro/"
     )
     parser.add_argument(
         "--timeout",

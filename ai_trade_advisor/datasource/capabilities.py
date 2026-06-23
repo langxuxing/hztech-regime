@@ -35,7 +35,7 @@ def assess_data_capabilities(cfg: AdvisorConfig | None = None) -> dict[str, Any]
             "status": "ok" if cfg.use_taker_cvd else "disabled",
             "note": "Binance taker；失败时不使用 ohlcv 代理",
         },
-        "derivatives": {"status": "ok", "note": "Funding/OI via ccxt；主 funding 源"},
+        "derivatives": {"status": "ok", "note": "Funding/OI；Funding 统一 snapshot (Binance 主源)"},
         "etf_btc": {
             "status": "ok" if has_cg or local_bars else "partial",
             "note": "本地 CSV / Farside / CoinGlass API",
@@ -61,7 +61,7 @@ def assess_data_capabilities(cfg: AdvisorConfig | None = None) -> dict[str, Any]
             "note": "X_BEARER_TOKEN" if has_x else "演示模式或跳过",
         },
         "macro_fred": {"status": "ok", "note": "FRED 日度同步"},
-        "macro_ism": {"status": "fragile", "note": "Investing.com 非官方 API，建议替换"},
+        "macro_ism": {"status": "ok", "note": "FRED IPMAN 制造业产出（替代 ISM PMI）"},
         "forecast_consensus": {"status": "ok", "note": "Binance/OKX 公开端点 + 恐惧贪婪"},
     }
 
@@ -83,7 +83,7 @@ def assess_data_capabilities(cfg: AdvisorConfig | None = None) -> dict[str, Any]
         "coinglass_api_key": has_cg,
         "x_bearer_token": has_x,
         "event_demo_mode": cfg.event_demo_mode,
-        "funding_primary_source": "binance_fapi",
+        "funding_primary_source": "funding_snapshot:binance_fapi",
         "modules": modules,
         "optional_dependencies": opt,
         "ohlcv_dir": str(get_ohlcv_dir("Btc")),

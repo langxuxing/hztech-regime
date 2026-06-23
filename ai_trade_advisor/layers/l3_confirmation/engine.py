@@ -127,15 +127,29 @@ def run_confirmation(
     *,
     symbol_key: str,
     obi_state=None,
+    confirmed_inference: InferenceResult | None = None,
 ) -> tuple[ConfirmationState, TradeAdvice]:
-    """单轨推理场景的 Regime 防抖 + Advice 冷却（回测/测试用）。"""
-    confirmation = stabilize_regime(
-        inference,
-        symbol_key=symbol_key,
-        bar_minutes=cfg.bar_minutes,
-        min_dwell_bars=cfg.regime_min_dwell_bars,
-    )
-    confirmation = apply_df_confirmation(confirmation, inference, ingestion)
+    """单轨推理场景的 Regime 防抖 + Advice 冷却（回测/测试用，与生产同 confirm_regime_state）。"""
+    raw = inference.raw
+    confirmed_raw = (confirmed_inference.raw if confirmed_inference else None) or raw
+
+    if raw is not None and confirmed_raw is not None:
+        confirmation = confirm_regime_state(
+            symbol_key=symbol_key,
+            live=raw,
+            confirmed=confirmed_raw,
+            min_dwell_bars=cfg.regime_min_dwell_bars,
+            transition_penalty=cfg.regime_transition_penalty,
+        )
+        confirmation = apply_df_confirmation(confirmation, inference, ingestion)
+    else:
+        confirmation = stabilize_regime(
+            inference,
+            symbol_key=symbol_key,
+            bar_minutes=cfg.bar_minutes,
+            min_dwell_bars=cfg.regime_min_dwell_bars,
+        )
+        confirmation = apply_df_confirmation(confirmation, inference, ingestion)
 
     locked_advice, debouncer = debounce_advice(
         cfg,

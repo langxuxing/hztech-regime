@@ -47,7 +47,7 @@ def _gk_volatility(df: pd.DataFrame, window: int = 24) -> float | None:
     """Garman-Klass 历史实现波动率代理。"""
     if len(df) < window + 1:
         return None
-    sub = df.tail(window).astype(float)
+    sub = df.tail(window)[["open", "high", "low", "close"]].astype(float)
     log_hl = np.log(sub["high"] / sub["low"].clip(lower=1e-12))
     log_co = np.log(sub["close"] / sub["open"].clip(lower=1e-12))
     gk = 0.5 * log_hl**2 - (2 * np.log(2) - 1) * log_co**2

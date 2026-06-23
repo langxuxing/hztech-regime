@@ -29,15 +29,20 @@ def run_ingestion(
 
     transform = split_confirmed_bars(df, bar_minutes=cfg.bar_minutes)
     ticker = fetch_live_ticker(cfg)
-    price = ticker.last
-    candle_price = float(df.iloc[-1]["close"])
+    live_price = ticker.last
+    structure_price = float(transform.df_confirmed.iloc[-1]["close"])
 
-    market = build_market_features(cfg, transform.df_confirmed, candle_price=candle_price)
+    market = build_market_features(
+        cfg,
+        transform.df_confirmed,
+        candle_price=structure_price,
+        ticker=ticker,
+    )
     vol_feats, gex_engine, gex_levels = build_volatility_features(
-        cfg, transform.df_confirmed, price=price, use_deribit=cfg.use_deribit_gex
+        cfg, transform.df_confirmed, price=live_price, use_deribit=cfg.use_deribit_gex
     )
     micro, liquidation, ob = build_microstructure_features(
-        cfg, transform.df_confirmed, price=price, skip_orderbook=skip_orderbook
+        cfg, transform.df_confirmed, price=live_price, skip_orderbook=skip_orderbook
     )
     macro_flow, macro, flows = build_macro_flow_features(
         cfg, skip_capital_flows=skip_capital_flows
@@ -46,7 +51,7 @@ def run_ingestion(
     from ai_trade_advisor.features.liquidity_map import detect_liquidity_sweeps
     from ai_trade_advisor.features.smc import build_smc_snapshot
 
-    smc = build_smc_snapshot(transform.df_confirmed, candle_price)
+    smc = build_smc_snapshot(transform.df_confirmed, structure_price)
     liquidity = detect_liquidity_sweeps(transform.df_confirmed)
 
     ctx = MarketContext(
@@ -54,7 +59,7 @@ def run_ingestion(
         exchange=cfg.exchange,
         timeframe=f"{cfg.bar_minutes}m",
         as_of=ticker.as_of,
-        last_price=price,
+        last_price=live_price,
         ohlcv_summary=market["ohlcv_summary"],
         smc=smc,
         liquidity_levels=liquidity,

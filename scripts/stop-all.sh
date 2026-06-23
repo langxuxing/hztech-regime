@@ -9,6 +9,7 @@ log "停止服务..."
 
 stop_by_pid_file "API" "$API_PID_FILE"
 stop_by_pid_file "Web" "$WEB_PID_FILE"
+stop_by_pid_file "Data Scheduler" "${PID_DIR}/data-scheduler.pid"
 stop_by_pid_file "快照 worker" "$PID_DIR/snapshot-worker.pid"
 
 # 兜底：按端口清理残留进程

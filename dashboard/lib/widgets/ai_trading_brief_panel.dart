@@ -89,6 +89,27 @@ class AiTradingBriefPanel extends StatelessWidget {
             color: AppTheme.neutral,
           ),
           const SizedBox(height: 10),
+          ..._signalNotes(brief!).map(
+            (n) => Padding(
+              padding: const EdgeInsets.only(bottom: 6),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  SizedBox(
+                    width: 72,
+                    child: Text(
+                      n.$1,
+                      style: const TextStyle(fontSize: 10, color: AppTheme.textSecondary),
+                    ),
+                  ),
+                  Expanded(
+                    child: Text(n.$2, style: const TextStyle(fontSize: 11, height: 1.35)),
+                  ),
+                ],
+              ),
+            ),
+          ),
+          const SizedBox(height: 10),
           if (plan.isNotEmpty) ...[
             const Text('操作计划', style: TextStyle(fontSize: 10, color: AppTheme.textSecondary)),
             const SizedBox(height: 6),
@@ -137,6 +158,21 @@ class AiTradingBriefPanel extends StatelessWidget {
         ],
       ),
     );
+  }
+
+  static List<(String, String)> _signalNotes(Map<String, dynamic> brief) {
+    final items = <(String, String)>[];
+    void add(String label, String key) {
+      final v = brief[key]?.toString();
+      if (v != null && v.isNotEmpty) items.add((label, v));
+    }
+
+    add('SMC/ICT', 'smc_action');
+    add('流动性', 'liquidity_note');
+    add('GEX', 'gex_note');
+    add('衍生品', 'derivatives_note');
+    add('资金流', 'flow_note');
+    return items;
   }
 }
 

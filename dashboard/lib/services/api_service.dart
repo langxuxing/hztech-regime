@@ -220,19 +220,8 @@ class ApiService {
 
   /// 优先 /api/radar 单次拉取；失败时回退并行多接口。
   Future<RadarLoadResult> loadRadar({
-    bool useMock = false,
     bool deepScanEvents = false,
   }) async {
-    if (useMock) {
-      return RadarLoadResult(
-        dashboard: mockData(),
-        events: mockEvents(),
-        consensus: mockConsensus(),
-        regimeHistory: mockRegimeHistory(),
-        usedMock: true,
-      );
-    }
-
     final errors = <String>[];
 
     try {

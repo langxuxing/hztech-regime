@@ -23,7 +23,6 @@ class MarketRadarTab extends StatefulWidget {
     required this.onRefresh,
     this.isRefreshing = false,
     this.api,
-    this.useMock = false,
   });
 
   final DashboardData data;
@@ -31,7 +30,6 @@ class MarketRadarTab extends StatefulWidget {
   final Future<void> Function() onRefresh;
   final bool isRefreshing;
   final ApiService? api;
-  final bool useMock;
 
   @override
   State<MarketRadarTab> createState() => _MarketRadarTabState();
@@ -149,7 +147,6 @@ class _MarketRadarTabState extends State<MarketRadarTab> with SingleTickerProvid
           ? DataSourcesPanel(
               api: widget.api!,
               data: data,
-              useMock: widget.useMock,
               onRefreshParent: widget.onRefresh,
             )
           : Center(

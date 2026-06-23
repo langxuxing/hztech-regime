@@ -12,13 +12,11 @@ class DataSourcesPanel extends StatefulWidget {
     super.key,
     required this.api,
     required this.data,
-    this.useMock = false,
     this.onRefreshParent,
   });
 
   final ApiService api;
   final DashboardData data;
-  final bool useMock;
   final Future<void> Function()? onRefreshParent;
 
   @override
@@ -42,9 +40,7 @@ class _DataSourcesPanelState extends State<DataSourcesPanel> {
       _error = null;
     });
     try {
-      final status = widget.useMock
-          ? DataSourcesStatus.demo()
-          : await widget.api.fetchSchedulerStatus();
+      final status = await widget.api.fetchSchedulerStatus();
       if (!mounted) return;
       setState(() {
         _status = status;

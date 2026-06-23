@@ -59,7 +59,7 @@ class ModelsTab extends StatelessWidget {
             ],
           ] else
             const Text(
-              '模型数据仅 BTC 完整支持；请连接 API 或启用演示模式。',
+              '模型数据仅 BTC 完整支持；请连接 API 服务。',
               style: TextStyle(fontSize: 12),
             ),
           if (api != null) ...[

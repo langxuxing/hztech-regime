@@ -3,11 +3,11 @@
 from __future__ import annotations
 
 from ai_trade_advisor.ai.advisor import generate_advice
-from ai_trade_advisor.black_swan.engine import (
-    apply_circuit_breaker_to_regime,
-    evaluate_black_swan_alert,
+from ai_trade_advisor.black_swan.engine import evaluate_black_swan_alert
+from ai_trade_advisor.black_swan.pipeline import (
+    apply_black_swan_after_confirmation,
+    evaluate_black_swan_fast,
 )
-from ai_trade_advisor.black_swan.strategies import build_practical_signals
 from ai_trade_advisor.bigevent.engine import load_pipeline_event_context
 from ai_trade_advisor.config import AdvisorConfig
 from ai_trade_advisor.context.builder import build_structured_context
@@ -23,7 +23,6 @@ from ai_trade_advisor.layers.l4_execution.execution import run_execution
 from ai_trade_advisor.layers.types import PipelineMetadata, RegimePipelineResult
 from ai_trade_advisor.models import BoardInsights, MarketContext, TradeAdvice
 from ai_trade_advisor.regime.matrix import enrich_regime_dict
-from ai_trade_advisor.regime.confirmation import merge_confirmed_into_regime_dict
 from ai_trade_advisor.signal.debouncer import compute_orderbook_obi, smooth_obi
 
 
@@ -58,43 +57,20 @@ def run_regime_pipeline(
 
     if asset_is_btc:
         ctx.btc_regime = enrich_regime_dict(live_raw.to_dict())
-
-        micro = ingestion.microstructure
-        practical = build_practical_signals(
-            ingestion.transform.df_confirmed,
-            cfg=cfg,
-            market=ingestion.market,
-            microstructure=micro,
-            volatility=ingestion.volatility,
-            liquidation=ingestion.liquidation,
-            regime=ctx.btc_regime,
-            price=ctx.last_price,
-        )
-        alert = evaluate_black_swan_alert(
-            macro=ingestion.macro,
-            liquidation=ingestion.liquidation,
-            liquidation_pulse=micro.get("liquidation_pulse"),
-            changepoint_prob=live_raw.changepoint_prob,
-            dvol_leads_gk=ingestion.volatility.get("dvol_leads_gk"),
-            vol_status=ingestion.volatility.get("vol_status"),
-            oi_change_pct=micro.get("oi_change_pct"),
-            funding_bias=micro.get("funding_bias"),
-            capital_flows=ctx.capital_flows,
-            liq_pulse_threshold_usd=cfg.black_swan_liq_pulse_usd,
-            liq_total_threshold_usd=cfg.black_swan_liq_total_usd,
-            changepoint_warn_threshold=cfg.black_swan_changepoint_threshold,
+        fast_alert = evaluate_black_swan_fast(
+            cfg,
+            ingestion,
+            live_raw=live_raw,
             upcoming_high_impact=upcoming_count,
-            practical_signals=practical,
         )
-        ctx.black_swan_alert = alert.to_dict()
-        if alert.suspended:
+        if fast_alert.suspended:
             ctx.macro_hazard_flag = True
     else:
-        alert = evaluate_black_swan_alert(
+        fast_alert = evaluate_black_swan_alert(
             macro=ingestion.macro,
             liquidation=ingestion.liquidation,
         )
-        ctx.black_swan_alert = alert.to_dict()
+        ctx.black_swan_alert = fast_alert.to_dict()
 
     obi_state = None
     if ctx.orderbook:
@@ -103,8 +79,8 @@ def run_regime_pipeline(
         ctx.obi_smoothed = obi_state.smoothed
 
     raw_advice = generate_advice(cfg, ctx)
-    if ctx.macro_hazard_flag or alert.suspended:
-        raw_advice = _apply_hazard_lock(raw_advice, alert)
+    if ctx.macro_hazard_flag or fast_alert.suspended:
+        raw_advice = _apply_hazard_lock(raw_advice, fast_alert)
 
     ctx.trading_brief = build_trading_brief(ctx, raw_advice)
 
@@ -120,9 +96,18 @@ def run_regime_pipeline(
     )
 
     if asset_is_btc:
-        ctx.btc_regime = merge_confirmed_into_regime_dict(ctx.btc_regime, confirmation)
-        ctx.regime_confirmation = confirmation.to_dict()
-        ctx.btc_regime = apply_circuit_breaker_to_regime(ctx.btc_regime, alert)
+        alert = apply_black_swan_after_confirmation(
+            cfg,
+            ctx,
+            ingestion,
+            confirmation,
+            live_regime=ctx.btc_regime,
+            live_raw=live_raw,
+            fast_alert=fast_alert,
+            upcoming_high_impact=upcoming_count,
+        )
+    else:
+        alert = fast_alert
 
     ctx.trading_brief = build_trading_brief(ctx, advice)
 
@@ -154,15 +139,17 @@ def run_regime_pipeline(
             "L1 多源数据输入",
             "L1 特征变频 / df_confirmed",
             "L2 HMM + 硬规则推理",
+            "L2.5a 快变量黑天鹅（宏观/强平/变点）",
             "L3 转置惩罚 + 驻留防抖",
-            "L2.5 黑天鹅分级预警",
-            "L4 策略路由 / 熔断",
+            "L2.5b 确认后实用策略 + 熔断",
+            "L4 策略路由 / 参数微调",
         ],
         layers={
             "ingestion": ingestion.to_dict(),
             "inference_live": live_inf.to_dict(),
             "inference_confirmed": confirmed_inf.to_dict(),
             "confirmation": confirmation.to_dict(),
+            "black_swan_fast": fast_alert.to_dict(),
             "black_swan": alert.to_dict(),
             "execution": execution.to_dict(),
         },

@@ -27,7 +27,7 @@
 | 事件日历 | CoinGlass API | 300s | 不启用 HTML scrape |
 | X 突发 | X API v2 | 300s | demo 或跳过 |
 | 宏观 FRED | fred.stlouisfed.org | 日度 | 正常 |
-| ISM PMI | Investing.com（脆弱） | 日度 | 待替换 |
+| 制造业活动 (ism/) | FRED `IPMAN` | 日度 | 替代 ISM PMI |
 
 ## 统一调度器
 
@@ -52,4 +52,8 @@
 
 ## Funding 主源
 
-衍生品与 forecast 共用 **Binance `fapi/v1/premiumIndex`** 作为主资金费率源；CoinGlass 跨所费率仅作 forecast 补充（需 Key）。
+衍生品与趋势共识共用 **`funding_snapshot`**（`ai_trade_advisor/datasource/funding_snapshot.py`）：
+
+- 主源：Binance `fapi/v1/premiumIndex` + `fundingRate` 历史
+- 补充：CoinGlass 跨所均值（有 `COINGLASS_API_KEY` 时写入 snapshot）
+- 消费方：`derivatives_trend`、`forecast/ensemble`（单一 `funding_snapshot` 信号，不再重复拉取）

@@ -37,7 +37,9 @@ fi
 
 if is_running "$DATA_SCHEDULER_PID_FILE"; then
   log "Scheduler: 运行中 (pid $(cat "$DATA_SCHEDULER_PID_FILE"))"
-  log "  btc_1m=${SCHED_BTC_1M_SEC:-${BTC_1M_INTERVAL_SEC:-300}}s sync=$(printf '%02d:%02d' "${SCHED_SYNC_HOUR:-${SYNC_HOUR:-8}}" "${SCHED_SYNC_MINUTE:-${SYNC_MINUTE:-0}}") (${SCHED_SYNC_TIMEZONE:-${SYNC_TIMEZONE:-Asia/Shanghai}})"
+  log "  计划: $(scheduler_config_line)"
+  log "  任务:"
+  print_scheduler_tasks
 else
   log "Scheduler: 未运行（启动: ./scripts/start-data-scheduler.sh）"
 fi

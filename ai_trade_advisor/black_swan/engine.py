@@ -125,9 +125,11 @@ def evaluate_black_swan_alert(
     near_notional = float(pulse.get("near_notional_usd") or 0)
     total_weight = float(pulse.get("total_weight") or 0)
     extreme_pulse = bool(pulse.get("extreme_pulse"))
+    near_pulse = near_notional >= liq_pulse_threshold_usd
+    grid_extreme = total_weight >= liq_total_threshold_usd
     oi_shock = oi_change_pct is not None and oi_change_pct <= -3.0
 
-    if near_notional >= liq_pulse_threshold_usd or total_weight >= liq_total_threshold_usd:
+    if near_pulse or grid_extreme:
         scores["liq_pulse"] = min(1.0, max(near_notional, total_weight) / liq_total_threshold_usd)
         triggers.append(
             f"强平脉冲: 近端 ${near_notional:,.0f} / 网格权重 ${total_weight:,.0f}"
@@ -177,6 +179,8 @@ def evaluate_black_swan_alert(
         scores=scores,
         macro_hazard=macro_hazard,
         extreme_pulse=extreme_pulse,
+        near_pulse=near_pulse,
+        grid_extreme=grid_extreme,
         oi_shock=oi_shock,
         cp=cp,
         changepoint_warn_threshold=changepoint_warn_threshold,
@@ -240,6 +244,8 @@ def _resolve_level(
     scores: dict[str, float],
     macro_hazard: bool,
     extreme_pulse: bool,
+    near_pulse: bool,
+    grid_extreme: bool,
     oi_shock: bool,
     cp: float,
     changepoint_warn_threshold: float,
@@ -247,16 +253,20 @@ def _resolve_level(
 ) -> AlertLevel:
     if macro_hazard:
         return 3
-    if extreme_pulse and oi_shock:
+    if (extreme_pulse or near_pulse) and oi_shock:
         return 3
     if (
         cp >= changepoint_warn_threshold
-        or extreme_pulse
+        or (near_pulse and scores.get("liq_pulse", 0) >= 0.85)
         or scores.get("dvol_lead", 0) >= 0.8
         or max_strategy_hint >= 2
         or (
             scores.get("range_squeeze", 0) >= 0.85
             and scores.get("vol_squeeze", 0) >= 0.55
+        )
+        or (
+            scores.get("range_squeeze", 0) >= 0.55
+            and scores.get("donchian_edge", 0) >= 0.35
         )
         or scores.get("oi_divergence", 0) >= 0.85
     ):
@@ -270,9 +280,53 @@ def _resolve_level(
         or scores.get("failed_breakout", 0) >= 0.5
         or scores.get("macro_hazard", 0) >= 0.4
         or scores.get("donchian_edge", 0) >= 0.35
+        or (grid_extreme and not near_pulse)
     ):
         return 1
     return 0
+
+
+def combine_black_swan_alerts(*alerts: BlackSwanAlert) -> BlackSwanAlert:
+    """合并快/慢两阶段预警，取最高级别并去重 triggers。"""
+    if not alerts:
+        return BlackSwanAlert(level=0, level_label=ALERT_LABELS[0], suspended=False)
+
+    level = max(int(a.level) for a in alerts)
+    triggers: list[str] = []
+    scores: dict[str, float] = {}
+    strategies: list[dict[str, Any]] = []
+
+    for alert in alerts:
+        for t in alert.triggers:
+            if t not in triggers:
+                triggers.append(t)
+        for key, val in alert.scores.items():
+            scores[key] = max(scores.get(key, 0.0), float(val))
+        for s in alert.strategies:
+            if s not in strategies:
+                strategies.append(s)
+
+    actions = dict(_LEVEL_ACTIONS[level])
+    suspended = level >= 3
+    circuit_breaker_active = level >= 2
+    suspend_reason = next(
+        (t for t in triggers if any(k in t for k in ("熔断", "宏观", "强平脉冲"))),
+        None,
+    )
+    if suspended and not suspend_reason and triggers:
+        suspend_reason = triggers[0]
+
+    return BlackSwanAlert(
+        level=level,
+        level_label=ALERT_LABELS[level],
+        suspended=suspended,
+        triggers=triggers,
+        scores=scores,
+        actions=actions,
+        circuit_breaker_active=circuit_breaker_active,
+        suspend_reason=suspend_reason,
+        strategies=strategies,
+    )
 
 
 def _etf_day_flow(flows: CapitalFlowsSnapshot | None) -> float | None:

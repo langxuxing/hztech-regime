@@ -9,8 +9,8 @@ from typing import Any
 
 from ai_trade_advisor.layers.types import CombinedRegimeStatus, ConfirmationState, InferenceResult
 
-# 状态切换最小驻留 K 线数（业务防抖）
-DEFAULT_MIN_DWELL_BARS = 3
+# 状态切换最小驻留 K 线数（与 AdvisorConfig.regime_min_dwell_bars 默认对齐）
+DEFAULT_MIN_DWELL_BARS = 2
 # 转置惩罚：非相邻状态切换需更高置信度门槛
 TRANSITION_PENALTY_CONFIDENCE = 0.78
 

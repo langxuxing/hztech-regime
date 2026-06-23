@@ -107,6 +107,55 @@ def test_halt_persists_after_regime_merge():
     assert final["black_swan"]["level"] == 3
 
 
+def test_extreme_pulse_alone_is_watch_not_warn():
+    alert = evaluate_black_swan_alert(
+        macro=MacroHazardState(macro_hazard_flag=False),
+        liquidation_pulse={
+            "near_notional_usd": 500_000,
+            "total_weight": 12_000_000,
+            "extreme_pulse": True,
+        },
+        liq_pulse_threshold_usd=5_000_000,
+        liq_total_threshold_usd=10_000_000,
+    )
+    assert alert.level == 1
+    assert not alert.circuit_breaker_active
+
+
+def test_combine_alerts_takes_max_level():
+    from ai_trade_advisor.black_swan.engine import BlackSwanAlert, combine_black_swan_alerts
+
+    fast = BlackSwanAlert(level=1, level_label="watch", suspended=False, triggers=["a"])
+    full = BlackSwanAlert(level=2, level_label="warn", suspended=False, triggers=["b"])
+    merged = combine_black_swan_alerts(fast, full)
+    assert merged.level == 2
+    assert "a" in merged.triggers and "b" in merged.triggers
+
+
+def test_donchian_resonance_warn():
+    import pandas as pd
+
+    from ai_trade_advisor.black_swan.strategies import _donchian_edge_signal
+
+    price = 100_000.0
+    n = 30
+    df = pd.DataFrame(
+        {
+            "open": [price] * n,
+            "high": [price * 1.002] * n,
+            "low": [price * 0.998] * n,
+            "close": [price] * n,
+        }
+    )
+    df.iloc[-1, df.columns.get_loc("close")] = price * 1.0019
+
+    alone = _donchian_edge_signal(df, range_squeeze_score=0.0)
+    resonant = _donchian_edge_signal(df, range_squeeze_score=0.6)
+    assert alone.level_hint == 1
+    assert resonant.level_hint == 2
+    assert resonant.details.get("range_squeeze_resonance") is True
+
+
 def test_black_swan_watch_on_etf_deriv_divergence():
     from ai_trade_advisor.models import CapitalFlowsSnapshot, EtfFlowDay, EtfFlowSnapshot
 

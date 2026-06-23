@@ -13,6 +13,7 @@ from ai_trade_advisor.regime.engines.vendor_paths import JAYD_VENDOR
 
 REGIME_NAMES = {0: "Trending Up", 1: "Trending Down", 2: "Sideways"}
 HMM_STATE_NAMES = {0: "Low Volatility", 1: "High Volatility"}
+_VOL_EPS = 1e-8
 
 
 @dataclass
@@ -52,6 +53,13 @@ def _normalize_ohlcv(df: pd.DataFrame) -> pd.DataFrame:
         raise ValueError("OHLCV requires close column")
     if "volume" not in out.columns:
         out["volume"] = 1.0
+    else:
+        out["volume"] = pd.to_numeric(out["volume"], errors="coerce").fillna(0.0)
+        zero_mask = out["volume"] <= 0
+        if zero_mask.all():
+            out["volume"] = 1.0
+        else:
+            out.loc[zero_mask, "volume"] = _VOL_EPS
     if "high" not in out.columns:
         out["high"] = out["close"]
     if "low" not in out.columns:
@@ -68,8 +76,9 @@ def engineer_features(ohlcv: pd.DataFrame) -> tuple[np.ndarray, pd.DataFrame]:
     df["price_change"] = df["close"].pct_change()
     df["price_momentum"] = df["close"].rolling(window=5).mean().pct_change()
     df["price_volatility"] = df["close"].rolling(window=5).std()
-    df["volume_change"] = df["volume"].pct_change()
-    df["volume_momentum"] = df["volume"].rolling(window=5).mean().pct_change()
+    df["volume_change"] = df["volume"].pct_change().replace([np.inf, -np.inf], np.nan).fillna(0.0)
+    vol_ma = df["volume"].rolling(window=5).mean()
+    df["volume_momentum"] = (vol_ma.pct_change().replace([np.inf, -np.inf], np.nan).fillna(0.0))
     df["consec_higher_highs"] = (df["high"] > df["high"].shift(1)).rolling(window=3).sum()
     df["consec_lower_lows"] = (df["low"] < df["low"].shift(1)).rolling(window=3).sum()
     df = df.dropna().reset_index(drop=True)

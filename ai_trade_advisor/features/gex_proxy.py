@@ -2,6 +2,9 @@ from __future__ import annotations
 
 from typing import Any
 
+import numpy as np
+import pandas as pd
+
 from ai_trade_advisor.config import AdvisorConfig
 from ai_trade_advisor.datasource.exchange import make_exchange
 from ai_trade_advisor.models import GexLevel

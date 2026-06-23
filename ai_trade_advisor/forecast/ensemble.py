@@ -5,7 +5,8 @@ from datetime import datetime, timezone
 from ai_trade_advisor.config import AdvisorConfig
 from ai_trade_advisor.features.macro_calendar_engine import evaluate_macro_hazard
 from ai_trade_advisor.forecast.models import PredictionDirection, PredictionSignal, TrendConsensus
-from ai_trade_advisor.datasource.forecast_sources import DEFAULT_FETCHERS, fetch_coinglass_funding
+from ai_trade_advisor.datasource.forecast_sources import DEFAULT_FETCHERS, funding_to_prediction_signal
+from ai_trade_advisor.datasource.funding_snapshot import fetch_funding_snapshot
 
 _DIRECTION_LABELS: dict[PredictionDirection, str] = {
     "up": "集成偏多",
@@ -20,8 +21,7 @@ _SOURCE_WEIGHTS: dict[str, float] = {
     "binance_top_trader": 1.0,
     "binance_global": 0.9,
     "okx_account_ratio": 0.95,
-    "binance_funding": 0.85,
-    "coinglass_funding": 0.9,
+    "funding_snapshot": 0.9,
     "alternative.me": 0.75,
 }
 
@@ -41,9 +41,11 @@ def fetch_trend_consensus(
     for _name, fetcher in DEFAULT_FETCHERS:
         signals.append(fetcher())
 
-    cg = fetch_coinglass_funding(coinglass_api_key)
-    if cg is not None:
-        signals.append(cg)
+    try:
+        snap = fetch_funding_snapshot(cfg, coinglass_api_key=cfg.coinglass_api_key)
+        signals.append(funding_to_prediction_signal(snap))
+    except Exception:
+        pass
 
     return aggregate_signals(signals, asset=asset, macro_hazard=False)
 

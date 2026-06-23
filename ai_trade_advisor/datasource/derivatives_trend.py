@@ -5,6 +5,7 @@ from typing import Any, Literal
 import pandas as pd
 
 from ai_trade_advisor.config import AdvisorConfig
+from ai_trade_advisor.datasource.funding_snapshot import fetch_funding_snapshot
 from ai_trade_advisor.datasource.exchange import make_exchange
 
 TrendBias = Literal["bullish", "bearish", "neutral"]
@@ -79,21 +80,8 @@ def _oi_sync(price_change_pct: float, oi_change_pct: float) -> tuple[TrendBias, 
 
 def _fetch_funding(cfg: AdvisorConfig) -> tuple[float | None, list[float]]:
     try:
-        exchange = make_exchange(
-            cfg.exchange,
-            market_type="swap",
-            binance=cfg.binance_futures(),
-        )
-        exchange.load_markets()
-        current = exchange.fetch_funding_rate(cfg.symbol)
-        rate = float((current or {}).get("fundingRate") or 0)
-        history_rows: list[dict[str, Any]] = []
-        if exchange.has.get("fetchFundingRateHistory"):
-            history_rows = exchange.fetch_funding_rate_history(cfg.symbol, limit=12) or []
-        rates = [float(r.get("fundingRate") or 0) for r in history_rows if r.get("fundingRate") is not None]
-        if not rates:
-            rates = [rate]
-        return rate, rates
+        snap = fetch_funding_snapshot(cfg, coinglass_api_key=cfg.coinglass_api_key)
+        return snap.rate, snap.history
     except Exception:
         return None, []
 

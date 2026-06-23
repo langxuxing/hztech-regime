@@ -148,21 +148,43 @@ def prepare_btc_multiframe(
     cfg = cfg or AdvisorConfig()
     klines: dict[str, pd.DataFrame] = {}
 
+    def _resample_indexed(std: pd.DataFrame, tf: str) -> pd.DataFrame:
+        freq = _to_pandas_freq(tf)
+        resampled = std.resample(freq, label="right", closed="right").agg(
+            {"open": "first", "high": "max", "low": "min", "close": "last", "volume": "sum"}
+        )
+        return resampled.dropna(subset=["open"]).reset_index()
+
     if df is not None and len(df) >= 100 and (
         "timestamp" in df.columns or "datetime" in df.columns or isinstance(df.index, pd.DatetimeIndex)
     ):
         std = _standardize_ohlcv(df)
         if len(std) >= 2:
             bar_minutes = max(1, int((std.index[-1] - std.index[-2]).total_seconds() / 60))
-            if bar_minutes <= 5:
+            if bar_minutes <= int(main_tf[:-1]):
                 klines[main_tf] = std.reset_index()
                 for tf in context_tfs:
                     if tf != main_tf:
-                        freq = _to_pandas_freq(tf)
-                        resampled = std.resample(freq).agg(
-                            {"open": "first", "high": "max", "low": "min", "close": "last", "volume": "sum"}
-                        )
-                        klines[tf] = resampled.reset_index()
+                        klines[tf] = _resample_indexed(std, tf)
+
+    # 粗粒度输入（如 30m）或数据不足：优先本地 OKX 1m resample
+    need_fetch = any(
+        tf not in klines or klines[tf] is None or len(klines[tf]) < 80
+        for tf in [main_tf, *context_tfs]
+    )
+    if need_fetch:
+        try:
+            from ai_trade_advisor.datasource.ohlcv import load_local_btc_1m_csvs
+
+            df_1m = load_local_btc_1m_csvs(lookback_days=30)
+            if df_1m is not None and len(df_1m) >= 500:
+                std_1m = _standardize_ohlcv(df_1m)
+                klines[main_tf] = _resample_indexed(std_1m, main_tf)
+                for tf in context_tfs:
+                    if tf != main_tf:
+                        klines[tf] = _resample_indexed(std_1m, tf)
+        except Exception:
+            pass
 
     for tf in [main_tf, *context_tfs]:
         if tf not in klines or klines[tf] is None or len(klines[tf]) < 80:

@@ -6,11 +6,13 @@ from ai_trade_advisor.datasource.exchange import make_exchange, resolve_exchange
 from ai_trade_advisor.datasource.http_client import get_json
 from ai_trade_advisor.datasource.ohlcv import (
     LocalBtcDataError,
+    OhlcvValidationResult,
     fetch_ohlcv_ccxt,
     get_last_ohlcv_source,
     load_local_btc_1m_csvs,
     load_ohlcv,
     ohlcv_summary,
+    validate_ohlcv,
 )
 from ai_trade_advisor.datasource.orderbook import fetch_orderbook
 from ai_trade_advisor.datasource.paths import (
@@ -46,6 +48,10 @@ __all__ = [
     "get_ohlcv_root",
     "LocalBtcDataError",
     "load_ohlcv",
+    "load_local_btc_1m_csvs",
+    "get_last_ohlcv_source",
+    "validate_ohlcv",
+    "OhlcvValidationResult",
     "make_exchange",
     "ohlcv_summary",
     "resolve_exchange_id",

@@ -153,8 +153,9 @@ class DataModuleStatus {
         'events_calendar' => '事件日历',
         'events_x' => 'X 监控',
         'macro_fred' => '宏观 FRED',
-        'macro_ism' => 'ISM PMI',
+        'macro_ism' => '制造业活动 (FRED IPMAN)',
         'forecast_consensus' => '趋势共识源',
+        'funding_snapshot' => 'Funding 统一快照',
         _ => id,
       };
 }

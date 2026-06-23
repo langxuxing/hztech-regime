@@ -44,7 +44,24 @@ def _run_subprocess(cmd: list[str], *, cwd: Path | None = None) -> tuple[bool, s
     return ok, detail
 
 
+def _record_and_log(
+    meta: SchedulerMetaStore,
+    task: str,
+    *,
+    ok: bool,
+    duration_ms: int,
+    detail: str = "",
+    error: str | None = None,
+) -> None:
+    meta.record(task, ok=ok, duration_ms=duration_ms, detail=detail, error=error)
+    if ok:
+        logging.info("任务完成 [%s] %dms %s", task, duration_ms, detail or "ok")
+    else:
+        logging.error("任务失败 [%s] %dms %s", task, duration_ms, error or detail or "unknown")
+
+
 def task_btc_1m(cfg: AdvisorConfig, meta: SchedulerMetaStore) -> None:
+    logging.info("任务开始 [btc_1m]")
     t0 = time.perf_counter()
     python = sys.executable
     out_dir = os.environ.get("BTC_1M_OUT_DIR", "")
@@ -63,7 +80,8 @@ def task_btc_1m(cfg: AdvisorConfig, meta: SchedulerMetaStore) -> None:
         cmd = [c for c in cmd if c != "--no-proxy"]
         cmd.extend(["--proxy", proxy])
     ok, detail = _run_subprocess(cmd)
-    meta.record(
+    _record_and_log(
+        meta,
         "btc_1m",
         ok=ok,
         duration_ms=int((time.perf_counter() - t0) * 1000),
@@ -73,9 +91,11 @@ def task_btc_1m(cfg: AdvisorConfig, meta: SchedulerMetaStore) -> None:
 
 
 def task_daily_sync(meta: SchedulerMetaStore) -> None:
+    logging.info("任务开始 [daily_sync]")
     t0 = time.perf_counter()
     ok, detail = _run_subprocess(["bash", str(SYNC_SCRIPT)])
-    meta.record(
+    _record_and_log(
+        meta,
         "daily_sync",
         ok=ok,
         duration_ms=int((time.perf_counter() - t0) * 1000),
@@ -92,18 +112,21 @@ def task_daily_sync(meta: SchedulerMetaStore) -> None:
 
 
 def task_events(cfg: AdvisorConfig, meta: SchedulerMetaStore) -> None:
+    logging.info("任务开始 [events]")
     t0 = time.perf_counter()
     try:
         snap = run_event_analysis(cfg, store=EventStore())
         detail = f"breaking={len(snap.breaking_events)} calendar={len(snap.calendar_events)}"
-        meta.record(
+        _record_and_log(
+            meta,
             "events",
             ok=True,
             duration_ms=int((time.perf_counter() - t0) * 1000),
             detail=detail,
         )
     except Exception as exc:
-        meta.record(
+        _record_and_log(
+            meta,
             "events",
             ok=False,
             duration_ms=int((time.perf_counter() - t0) * 1000),
@@ -112,20 +135,23 @@ def task_events(cfg: AdvisorConfig, meta: SchedulerMetaStore) -> None:
 
 
 def task_feedback(cfg: AdvisorConfig, meta: SchedulerMetaStore) -> None:
+    logging.info("任务开始 [regime_feedback]")
     t0 = time.perf_counter()
     store = FeedbackStore()
     try:
         fwd = run_forward_scoring_batch(cfg, store=store)
         cal = run_calibration(cfg, store=store)
         detail = f"forward={fwd.get('processed')} calibrated={cal.get('activated')}"
-        meta.record(
+        _record_and_log(
+            meta,
             "regime_feedback",
             ok=True,
             duration_ms=int((time.perf_counter() - t0) * 1000),
             detail=detail,
         )
     except Exception as exc:
-        meta.record(
+        _record_and_log(
+            meta,
             "regime_feedback",
             ok=False,
             duration_ms=int((time.perf_counter() - t0) * 1000),
@@ -166,6 +192,7 @@ def main() -> int:
         sync_hour,
         sync_minute,
         cfg.sched_sync_timezone,
+        feedback_interval_h,
     )
 
     last_btc = 0.0
@@ -185,14 +212,17 @@ def main() -> int:
         cfg = AdvisorConfig.from_env()
 
         if now_mono - last_btc >= btc_interval:
+            logging.info("定时触发 [btc_1m] interval=%ds", btc_interval)
             task_btc_1m(cfg, meta)
             last_btc = now_mono
 
         if now_mono - last_events >= events_interval:
+            logging.info("定时触发 [events] interval=%ds", events_interval)
             task_events(cfg, meta)
             last_events = now_mono
 
         if now_mono - last_feedback >= feedback_interval_h * 3600:
+            logging.info("定时触发 [regime_feedback] interval=%dh", feedback_interval_h)
             task_feedback(cfg, meta)
             last_feedback = now_mono
 

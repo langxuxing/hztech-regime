@@ -79,8 +79,10 @@ def build_practical_signals(
         _volume_dryup_signal(df),
         _failed_breakout_signal(regime),
         _cvd_divergence_signal(regime, micro),
-        _donchian_edge_signal(df),
     ]
+
+    range_score = next((s.score for s in signals if s.id == "range_squeeze"), 0.0)
+    signals.append(_donchian_edge_signal(df, range_squeeze_score=range_score))
 
     scores = {s.id: s.score for s in signals}
     max_hint = max((s.level_hint for s in signals), default=0)
@@ -366,32 +368,50 @@ def _cvd_divergence_signal(
     )
 
 
-def _donchian_edge_signal(df: pd.DataFrame) -> StrategySignal:
-    """唐奇安贴轨：价格贴近通道边缘，突破在即。"""
+def _donchian_edge_signal(df: pd.DataFrame, *, range_squeeze_score: float = 0.0) -> StrategySignal:
+    """唐奇安贴轨：价格贴近通道边缘；与箱体驻留共振时升至 Warn。"""
     meta = donchian_breakout_imminence(df)
     score = float(meta.get("score") or 0)
     if score <= 0:
         return StrategySignal("donchian_edge", "唐奇安贴轨", 0.0, 0)
 
+    level_hint = 1
+    trigger = "价格贴近唐奇安通道边缘 → 突破在即"
+    if range_squeeze_score >= 0.55:
+        level_hint = 2
+        score = min(1.0, score + 0.25)
+        trigger = "箱体驻留 + 唐奇安贴轨 → 变盘共振预警"
+
     return StrategySignal(
         "donchian_edge",
         "唐奇安贴轨",
         score,
-        1,
-        "价格贴近唐奇安通道边缘 → 突破在即",
+        level_hint,
+        trigger,
         {
             "dist_upper_pct": meta.get("dist_upper_pct"),
             "dist_lower_pct": meta.get("dist_lower_pct"),
+            "range_squeeze_resonance": range_squeeze_score >= 0.55,
         },
     )
 
 
 def donchian_breakout_imminence(df: pd.DataFrame) -> dict[str, Any]:
-    """辅助：价格贴唐奇安轨道运行，突破在即。"""
+    """辅助：价格贴唐奇安轨道运行，突破在即（优先用当前周期滚动通道）。"""
     if len(df) < 20:
         return {"score": 0.0}
     close = float(df.iloc[-1]["close"])
-    d_up, d_lo = donchian_14d(df)
+    if close <= 0:
+        return {"score": 0.0}
+
+    try:
+        d_up, d_lo = donchian_14d(df)
+    except (KeyError, ValueError):
+        high = df["high"].astype(float)
+        low = df["low"].astype(float)
+        d_up = float(high.tail(14).max())
+        d_lo = float(low.tail(14).min())
+
     width = (d_up - d_lo) / close * 100 if close > 0 else 0
     dist_upper = (d_up - close) / close * 100
     dist_lower = (close - d_lo) / close * 100

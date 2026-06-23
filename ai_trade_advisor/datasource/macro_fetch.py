@@ -17,7 +17,8 @@ from ai_trade_advisor.config import AdvisorConfig
 from ai_trade_advisor.datasource.paths import ensure_macro_layout, get_macro_root
 
 FRED_CSV_URL = "https://fred.stlouisfed.org/graph/fredgraph.csv"
-INVESTING_ISM_CHART_URL = "https://sbcharts.investing.com/events_charts/us/173.json"
+# ISM PMI 已于 2016 停止在 FRED 免费更新；改用官方 Fed 制造业产出指数 IPMAN
+ISM_FRED_SERIES_ID = "IPMAN"
 USER_AGENT = (
     "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
     "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
@@ -150,28 +151,18 @@ def _add_nfp_change(df: pd.DataFrame) -> pd.DataFrame:
     return out
 
 
-def fetch_ism_pmi(*, timeout: float = 30.0) -> pd.DataFrame:
+def fetch_manufacturing_activity(*, timeout: float = 30.0) -> pd.DataFrame:
     """
-    ISM 制造业 PMI（FRED 已于 2016 停更 NAPM）。
-    数据源：Investing.com 经济日历图表 API。
+    美国制造业活动代理指标（FRED IPMAN：Industrial Production: Manufacturing）。
+    替代已停更的 ISM NAPM 与脆弱的 Investing.com 爬虫。
     """
-    text = _download_text(INVESTING_ISM_CHART_URL, timeout=timeout)
-    payload = json.loads(text)
-    rows: list[dict[str, Any]] = []
-    for item in payload.get("data") or []:
-        if not item or len(item) < 2:
-            continue
-        ts_ms = int(item[0])
-        value = float(item[1])
-        dt = datetime.fromtimestamp(ts_ms / 1000.0, tz=UTC).date().isoformat()
-        rows.append({"date": dt, "value": value})
+    df = fetch_fred_series(ISM_FRED_SERIES_ID, timeout=timeout)
+    return _add_change_columns(df)
 
-    df = pd.DataFrame(rows)
-    if df.empty:
-        return df
-    df["date"] = pd.to_datetime(df["date"])
-    df = df.drop_duplicates(subset=["date"], keep="last").sort_values("date").reset_index(drop=True)
-    return df
+
+def fetch_ism_pmi(*, timeout: float = 30.0) -> pd.DataFrame:
+    """兼容旧名；实际拉取 FRED IPMAN 制造业产出指数。"""
+    return fetch_manufacturing_activity(timeout=timeout)
 
 
 def _save_csv(
@@ -242,10 +233,10 @@ def fetch_and_save_all(
             )
         )
 
-    # ISM PMI 单独目录
-    ism_df = fetch_ism_pmi(timeout=timeout)
+    # 制造业活动（FRED IPMAN，兼容 ism/ 目录名）
+    ism_df = fetch_manufacturing_activity(timeout=timeout)
     ism_path = root / "ism" / "ism_manufacturing_pmi.csv"
-    _save_csv(ism_df, ism_path)
+    _save_csv(ism_df, ism_path, extra_columns=["mom_pct", "yoy_pct"])
     ism_latest = ism_df.iloc[-1]
     results.append(
         MacroFetchResult(
@@ -254,7 +245,7 @@ def fetch_and_save_all(
             rows=len(ism_df),
             latest_date=ism_latest["date"].strftime("%Y-%m-%d"),
             latest_value=float(ism_latest["value"]),
-            source="investing.com:ism_pmi",
+            source=f"fred:{ISM_FRED_SERIES_ID}",
         )
     )
 

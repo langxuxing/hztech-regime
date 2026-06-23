@@ -14,13 +14,14 @@ ensure_env
 
 if is_running "$DATA_SCHEDULER_PID_FILE"; then
   log "Data Scheduler 已在运行 (pid $(cat "$DATA_SCHEDULER_PID_FILE"))"
+  log "  计划: $(scheduler_config_line)"
   log "  日志: $DATA_SCHEDULER_LOG"
   exit 0
 fi
 
 activate_venv
 
-log "启动 Data Scheduler"
+log "启动 Data Scheduler → $(scheduler_config_line)"
 pid="$(run_detached "$DATA_SCHEDULER_LOG" python "$ROOT/scripts/data_scheduler.py")"
 echo "$pid" >"$DATA_SCHEDULER_PID_FILE"
 

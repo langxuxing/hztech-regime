@@ -1,26 +1,30 @@
-"""Regime 防抖 + 黑天鹅预警：pipeline 与 orchestrator 共用。"""
+"""Regime 防抖 + 黑天鹅预警：委托 black_swan.pipeline 统一编排。"""
 
 from __future__ import annotations
 
 import pandas as pd
 
-from ai_trade_advisor.black_swan.engine import (
-    apply_circuit_breaker_to_regime,
-    evaluate_black_swan_alert,
+from ai_trade_advisor.black_swan.engine import BlackSwanAlert
+from ai_trade_advisor.black_swan.pipeline import (
+    apply_black_swan_after_confirmation,
+    evaluate_black_swan_confirmed,
+    evaluate_black_swan_fast,
 )
-from ai_trade_advisor.black_swan.strategies import build_practical_signals
 from ai_trade_advisor.config import AdvisorConfig
 from ai_trade_advisor.features.liquidation_grid import LiquidationGridState
 from ai_trade_advisor.features.macro_calendar_engine import MacroHazardState
-from ai_trade_advisor.layers.l1_ingestion.microstructure import _liquidation_pulse
 from ai_trade_advisor.layers.l1_ingestion.transform import split_confirmed_bars
+from ai_trade_advisor.layers.types import IngestionBundle
 from ai_trade_advisor.models import MarketContext
-from ai_trade_advisor.regime.confirmation import (
-    confirm_regime_state,
-    merge_confirmed_into_regime_dict,
-)
+from ai_trade_advisor.regime.confirmation import confirm_regime_state
 from ai_trade_advisor.regime.engine import analyze_btc_regime, BtcRegimeAnalysis
 from ai_trade_advisor.signal.debouncer import DebouncerState
+
+__all__ = [
+    "apply_regime_safety_layer",
+    "evaluate_black_swan_confirmed",
+    "evaluate_black_swan_fast",
+]
 
 
 def apply_regime_safety_layer(
@@ -34,14 +38,16 @@ def apply_regime_safety_layer(
     debouncer: DebouncerState | None = None,
     volatility: dict | None = None,
     microstructure: dict | None = None,
-) -> None:
+) -> BlackSwanAlert:
     """
-    对 BTC 主链执行：df_confirmed 双轨推理 → 防抖 → 黑天鹅分级预警。
-
-    就地更新 ctx.btc_regime 与 ctx.black_swan_alert。
+    回测/备用路径：双轨推理 → 防抖 → 黑天鹅（与 orchestrator 逻辑一致）。
     """
     if not ctx.btc_regime:
-        return
+        return evaluate_black_swan_fast(
+            cfg,
+            _ingestion_from_ctx(ctx, df, macro, liquidation, volatility, microstructure),
+            live_raw=None,
+        )
 
     transform = split_confirmed_bars(df, bar_minutes=cfg.bar_minutes)
     micro = microstructure or {}
@@ -71,42 +77,46 @@ def apply_regime_safety_layer(
         debouncer=debouncer,
     )
 
-    regime = merge_confirmed_into_regime_dict(ctx.btc_regime, confirmation)
-    ctx.regime_confirmation = confirmation.to_dict()
-
-    vol = volatility or {}
-    liq_pulse = micro.get("liquidation_pulse") or _liquidation_pulse(liquidation, ctx.last_price)
-
-    practical = build_practical_signals(
-        transform.df_confirmed,
-        cfg=cfg,
-        microstructure=micro,
-        volatility=vol,
-        liquidation=liquidation,
-        regime=regime,
-        price=ctx.last_price,
+    ingestion = _ingestion_from_ctx(ctx, df, macro, liquidation, volatility, microstructure, transform=transform)
+    fast = evaluate_black_swan_fast(cfg, ingestion, live_raw=live)
+    return apply_black_swan_after_confirmation(
+        cfg,
+        ctx,
+        ingestion,
+        confirmation,
+        live_regime=ctx.btc_regime,
+        live_raw=live,
+        fast_alert=fast,
     )
 
-    alert = evaluate_black_swan_alert(
+
+def _ingestion_from_ctx(
+    ctx: MarketContext,
+    df: pd.DataFrame,
+    macro: MacroHazardState,
+    liquidation: LiquidationGridState,
+    volatility: dict | None,
+    microstructure: dict | None,
+    *,
+    transform=None,
+) -> IngestionBundle:
+    from ai_trade_advisor.layers.l1_ingestion.transform import split_confirmed_bars
+    from ai_trade_advisor.layers.types import FeatureTransformResult, IngestionBundle
+
+    if transform is None:
+        transform = split_confirmed_bars(df, bar_minutes=30)
+    return IngestionBundle(
+        ctx=ctx,
+        df=df,
+        transform=transform,
         macro=macro,
+        gex_engine=None,
         liquidation=liquidation,
-        liquidation_pulse=liq_pulse,
-        changepoint_prob=live.changepoint_prob,
-        dvol_leads_gk=vol.get("dvol_leads_gk"),
-        vol_status=vol.get("vol_status") or ctx.vol_status,
-        oi_change_pct=micro.get("oi_change_pct") or regime.get("oi_change_pct"),
-        funding_bias=micro.get("funding_bias") or regime.get("funding_bias"),
-        capital_flows=ctx.capital_flows,
-        liq_pulse_threshold_usd=cfg.black_swan_liq_pulse_usd,
-        liq_total_threshold_usd=cfg.black_swan_liq_total_usd,
-        changepoint_warn_threshold=cfg.black_swan_changepoint_threshold,
-        practical_signals=practical,
+        market={},
+        volatility=volatility or {},
+        microstructure=microstructure or {},
+        macro_flow={},
     )
-    ctx.black_swan_alert = alert.to_dict()
-    ctx.btc_regime = apply_circuit_breaker_to_regime(regime, alert)
-
-    if alert.suspended:
-        ctx.macro_hazard_flag = True
 
 
 def _dict_to_analysis(data: dict) -> BtcRegimeAnalysis | None:

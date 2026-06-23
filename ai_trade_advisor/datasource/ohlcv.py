@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import logging
 import sys
+from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Literal
@@ -24,6 +25,16 @@ _last_ohlcv_source: OhlcvSource | None = None
 _MIN_LOCAL_BARS = 50
 
 
+@dataclass
+class OhlcvValidationResult:
+    ok: bool
+    bars: int
+    gap_count: int
+    ohlc_violations: int
+    duplicate_timestamps: int
+    notes: list[str]
+
+
 class LocalBtcDataError(RuntimeError):
     """本地 BTC OHLCV 数据不可用或不足。"""
 
@@ -31,6 +42,86 @@ class LocalBtcDataError(RuntimeError):
 def get_last_ohlcv_source() -> OhlcvSource | None:
     """最近一次 load_ohlcv 使用的数据来源。"""
     return _last_ohlcv_source
+
+
+def validate_ohlcv(
+    df: pd.DataFrame,
+    *,
+    bar_minutes: int | None = None,
+    strict: bool = False,
+) -> OhlcvValidationResult:
+    """校验 OHLCV 完整性：重复时间戳、OHLC 逻辑、可选 gap 检测。"""
+    notes: list[str] = []
+    if df is None or df.empty:
+        return OhlcvValidationResult(
+            ok=False,
+            bars=0,
+            gap_count=0,
+            ohlc_violations=0,
+            duplicate_timestamps=0,
+            notes=["empty dataframe"],
+        )
+
+    work = _normalize_1m_df(df) if "timestamp" in df.columns else df.copy()
+    bars = len(work)
+    dup = int(work["timestamp"].duplicated().sum()) if "timestamp" in work.columns else 0
+    if dup:
+        notes.append(f"duplicate timestamps: {dup}")
+
+    bad = work[
+        (work["high"] < work["low"])
+        | (work["high"] < work["open"])
+        | (work["high"] < work["close"])
+        | (work["low"] > work["open"])
+        | (work["low"] > work["close"])
+    ]
+    ohlc_violations = len(bad)
+    if ohlc_violations:
+        notes.append(f"ohlc logic violations: {ohlc_violations}")
+
+    gap_count = 0
+    if bar_minutes and "timestamp" in work.columns and len(work) > 1:
+        expected_ms = bar_minutes * 60_000
+        ts = work["timestamp"].astype(int).sort_values()
+        deltas = ts.diff().dropna()
+        gaps = deltas[deltas > expected_ms]
+        gap_count = len(gaps)
+        if gap_count:
+            notes.append(f"time gaps (>{bar_minutes}m): {gap_count}")
+
+    ok = ohlc_violations == 0 and (dup == 0 or not strict) and (gap_count == 0 or not strict)
+    return OhlcvValidationResult(
+        ok=ok,
+        bars=bars,
+        gap_count=gap_count,
+        ohlc_violations=ohlc_violations,
+        duplicate_timestamps=dup,
+        notes=notes,
+    )
+
+
+def _apply_ohlcv_validation(
+    df: pd.DataFrame,
+    *,
+    bar_minutes: int,
+    source: str,
+) -> pd.DataFrame:
+    """校验并在可修复时去重；严重异常打日志。"""
+    result = validate_ohlcv(df, bar_minutes=bar_minutes)
+    out = df.copy()
+    if result.duplicate_timestamps and "timestamp" in out.columns:
+        out = out.drop_duplicates(subset=["timestamp"], keep="last").sort_values("timestamp")
+        logger.warning("ohlcv[%s]: dropped %d duplicate bars", source, result.duplicate_timestamps)
+    if result.ohlc_violations:
+        logger.error(
+            "ohlcv[%s]: %d OHLC violations (bars=%d)",
+            source,
+            result.ohlc_violations,
+            result.bars,
+        )
+    if result.gap_count:
+        logger.warning("ohlcv[%s]: %d time gaps detected", source, result.gap_count)
+    return out.reset_index(drop=True)
 
 
 def fetch_ohlcv_ccxt(
@@ -50,7 +141,8 @@ def fetch_ohlcv_ccxt(
     raw = exchange.fetch_ohlcv(cfg.symbol, timeframe=timeframe, limit=bar_limit)
     df = pd.DataFrame(raw, columns=["timestamp", "open", "high", "low", "close", "volume"])
     df = df.assign(datetime=pd.to_datetime(df["timestamp"], unit="ms", utc=True))
-    return df.sort_values("timestamp").reset_index(drop=True)
+    df = df.sort_values("timestamp").reset_index(drop=True)
+    return _apply_ohlcv_validation(df, bar_minutes=cfg.bar_minutes, source="ccxt_live")
 
 
 def _normalize_1m_df(df: pd.DataFrame) -> pd.DataFrame:
@@ -115,7 +207,8 @@ def _try_load_local_btc(cfg: AdvisorConfig) -> pd.DataFrame | None:
     if len(resampled) < _MIN_LOCAL_BARS:
         return None
 
-    return resampled.tail(cfg.lookback_bars).reset_index(drop=True)
+    out = resampled.tail(cfg.lookback_bars).reset_index(drop=True)
+    return _apply_ohlcv_validation(out, bar_minutes=cfg.bar_minutes, source="local_btc_1m_resample")
 
 
 def _try_load_local_pepe(cfg: AdvisorConfig) -> pd.DataFrame | None:
