@@ -157,3 +157,26 @@ class HumanJudgmentStore:
     def latest(self, symbol: str) -> dict | None:
         rows = self.recent(symbol=symbol, limit=1)
         return rows[0] if rows else None
+
+    def count(self, *, symbol: str = "") -> int:
+        query = "SELECT COUNT(*) FROM human_regime_judgment"
+        params: list = []
+        if symbol:
+            query += " WHERE symbol = ?"
+            params.append(symbol)
+        with self._connect() as conn:
+            row = conn.execute(query, params).fetchone()
+        return int(row[0] if row else 0)
+
+    def count_forward_scored(self, *, symbol: str = "") -> int:
+        query = """
+            SELECT COUNT(*) FROM human_regime_judgment
+            WHERE forward_scored_at IS NOT NULL AND forward_scored_at != ''
+        """
+        params: list = []
+        if symbol:
+            query += " AND symbol = ?"
+            params.append(symbol)
+        with self._connect() as conn:
+            row = conn.execute(query, params).fetchone()
+        return int(row[0] if row else 0)

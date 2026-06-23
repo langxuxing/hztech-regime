@@ -39,6 +39,7 @@ python scripts/trend_health_check.py
 ### API
 
 ```bash
+curl http://127.0.0.1:8765/api/regime/feedback-stats
 curl http://127.0.0.1:8765/health
 curl http://127.0.0.1:8765/api/trend-health
 curl http://127.0.0.1:8765/api/radar | jq '.trend_judgment'
@@ -68,6 +69,13 @@ curl -X POST 'http://127.0.0.1:8765/api/regime/human-judgment?symbol=BTC/USDT:US
 
 ```bash
 python scripts/run_calibrator_baseline.py
+```
+
+5. 生产门禁（就绪度 + 趋势健康 + 样本量）：
+
+```bash
+python scripts/check_trend_production.py
+# exit 0=通过, 2=有警告, 1=阻断
 ```
 
 ## 5. 回测验证

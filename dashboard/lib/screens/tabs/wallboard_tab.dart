@@ -19,6 +19,7 @@ import '../../widgets/radar_overview_bar.dart';
 import '../../widgets/price_header.dart';
 import '../../widgets/radar_page_shell.dart';
 import '../../layers/pipeline_flow_panel.dart';
+import '../../regime/human_judgment_quick_panel.dart';
 import '../../regime/model_comparison_panel.dart';
 
 /// 大屏总览：六区聚合只读视图。
@@ -159,6 +160,15 @@ class _WallboardTabState extends State<WallboardTab> {
             ModelComparisonPanel(
               btcRegime: widget.data.btcRegime!,
               api: widget.api,
+              symbol: widget.data.symbol,
+              compact: true,
+            ),
+          ],
+          if (_heroJudgment != null && widget.api != null) ...[
+            const SizedBox(height: 12),
+            HumanJudgmentQuickPanel(
+              judgment: _heroJudgment!,
+              api: widget.api!,
               symbol: widget.data.symbol,
               compact: true,
             ),

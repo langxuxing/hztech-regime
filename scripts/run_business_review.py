@@ -420,6 +420,7 @@ def run_pytest(report: ReviewReport) -> None:
         "tests/test_trend_judgment.py",
         "tests/test_trend_health_check.py",
         "tests/test_api_radar_contract.py",
+        "tests/test_feedback_stats.py",
     ]
     cmd = [sys.executable, "-m", "pytest", "-q", "--tb=no", *tests]
     proc = subprocess.run(cmd, cwd=ROOT, capture_output=True, text=True, check=False)

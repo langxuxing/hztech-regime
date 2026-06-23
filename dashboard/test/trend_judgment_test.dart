@@ -22,11 +22,35 @@ void main() {
         'consensus_misaligned': false,
         'consensus_capped': false,
         'model_agreement': 0.8,
+        'dashboard_regime': 'trend_up',
       });
       expect(tj.trend, 'uptrend');
+      expect(tj.dashboardRegime, 'trend_up');
+      expect(tj.suggestedHumanRegime, 'trend_up');
       expect(tj.hmmDisagrees, isTrue);
       expect(tj.isConfirmed, isTrue);
       expect(tj.confidence, 0.72);
+    });
+
+    test('suggestedHumanRegime from regime_id', () {
+      final tj = TrendJudgment.fromJson({
+        'trend': 'downtrend',
+        'trend_label': '下跌',
+        'tech_trend': 'downtrend',
+        'confidence': 0.6,
+        'regime_id': 'low_vol_downtrend',
+        'regime_label': '低波下行',
+        'stability': 'provisional',
+        'business_stance': '',
+        'drivers': [],
+        'data_tier': 'demo',
+        'needs_human_judgment': false,
+        'in_regime_transition': false,
+        'hmm_disagrees': false,
+        'consensus_misaligned': false,
+        'consensus_capped': false,
+      });
+      expect(tj.suggestedHumanRegime, 'trend_down');
     });
 
     test('fromBtcRegime fallback', () {

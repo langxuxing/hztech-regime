@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../../models/trend_judgment.dart';
 import '../../models/dashboard_data.dart';
 import '../../regime/regime_history.dart';
 import '../../widgets/commander_banner.dart';
@@ -17,7 +18,8 @@ import '../../layers/l3_confirmation_tab.dart';
 import '../../layers/l4_execution_tab.dart';
 import '../../bigevent/event_merger.dart';
 import '../../services/api_service.dart';
-import '../../theme/app_theme.dart';
+import '../../regime/human_judgment_quick_panel.dart';
+import '../../widgets/trend_judgment_hero.dart';
 
 /// Regime 状态：判断 + 确认 + 行动 + 引擎详情折叠。
 class RegimeStatusTab extends StatefulWidget {
@@ -30,6 +32,8 @@ class RegimeStatusTab extends StatefulWidget {
     required this.onRefresh,
     this.isRefreshing = false,
     this.api,
+    this.trendJudgment,
+    this.readinessTier,
   });
 
   final DashboardData data;
@@ -39,6 +43,8 @@ class RegimeStatusTab extends StatefulWidget {
   final Future<void> Function() onRefresh;
   final bool isRefreshing;
   final ApiService? api;
+  final TrendJudgment? trendJudgment;
+  final String? readinessTier;
 
   @override
   State<RegimeStatusTab> createState() => _RegimeStatusTabState();
@@ -55,6 +61,8 @@ class _RegimeStatusTabState extends State<RegimeStatusTab> {
     final liveId = combined?['live_regime_id']?.toString();
     final confirmedId = combined?['confirmed_regime_id']?.toString();
     final locked = liveId != null && confirmedId != null && liveId != confirmedId;
+    final heroJudgment =
+        widget.trendJudgment ?? TrendJudgment.fromBtcRegime(widget.data.btcRegime);
 
     return RadarPageShell(
       onRefresh: widget.onRefresh,
@@ -65,9 +73,26 @@ class _RegimeStatusTabState extends State<RegimeStatusTab> {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           CommanderBanner(data: widget.data),
+          if (heroJudgment.inRegimeTransition || heroJudgment.stability == 'transition') ...[
+            const SizedBox(height: 8),
+            const StatusBadge(label: '变点转换期 · 勿追涨杀跌', color: AppTheme.short),
+          ],
           if (locked) ...[
             const SizedBox(height: 8),
             const StatusBadge(label: '防抖锁定: live ≠ confirmed', color: AppTheme.accent),
+          ],
+          const SizedBox(height: 16),
+          TrendJudgmentHero(
+            judgment: heroJudgment,
+            readinessTier: widget.readinessTier,
+          ),
+          if (widget.api != null) ...[
+            const SizedBox(height: 12),
+            HumanJudgmentQuickPanel(
+              judgment: heroJudgment,
+              api: widget.api!,
+              symbol: widget.data.symbol,
+            ),
           ],
           const SizedBox(height: 16),
           RegimeMatrixPanel(data: widget.data),

@@ -24,6 +24,7 @@ from ai_trade_advisor.regime.feedback.market_context import build_market_context
 from ai_trade_advisor.regime.feedback.calibrator import run_calibration
 from ai_trade_advisor.regime.trend_health import run_trend_health_check
 from ai_trade_advisor.regime.feedback.worker import run_forward_scoring_batch
+from ai_trade_advisor.regime.feedback.stats import build_feedback_stats
 from ai_trade_advisor.datasource.capabilities import assess_data_capabilities
 from ai_trade_advisor.datasource.scheduler_meta import SchedulerMetaStore
 from ai_trade_advisor.forecast.ensemble import fetch_from_config
@@ -230,6 +231,22 @@ def human_judgment():
             feedback_store=_feedback_store,
         )
         return jsonify({"ok": True, "symbol": cfg.symbol, **result})
+    except Exception as exc:
+        return jsonify({"error": str(exc)}), 500
+
+
+@app.route("/api/regime/feedback-stats", methods=["GET", "OPTIONS"])
+def regime_feedback_stats():
+    symbol = request.args.get("symbol", "BTC/USDT:USDT").strip()
+    cfg = _cfg_from_query()
+    try:
+        stats = build_feedback_stats(
+            symbol=symbol or cfg.symbol,
+            cfg=cfg,
+            judgment_store=_judgment_store,
+            feedback_store=_feedback_store,
+        )
+        return jsonify(stats)
     except Exception as exc:
         return jsonify({"error": str(exc)}), 500
 
@@ -547,6 +564,7 @@ def main(argv: list[str] | None = None) -> int:
     print("  Regime 历史: /api/regime/history")
     print("  多模型对比: /api/regime/models")
     print("  人工判断:   /api/regime/human-judgment (GET/POST)")
+    print("  反馈统计:   /api/regime/feedback-stats")
     print("  模型打分:   /api/regime/model-scores")
     print("  Leaderboard: /api/regime/model-leaderboard")
     print("  推荐模型:   /api/regime/recommended-model")

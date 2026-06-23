@@ -39,6 +39,29 @@ class TrendJudgmentHero extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
+          if (judgment.inRegimeTransition || judgment.stability == 'transition')
+            Container(
+              width: double.infinity,
+              margin: const EdgeInsets.only(bottom: 12),
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+              decoration: BoxDecoration(
+                color: AppTheme.short.withValues(alpha: 0.12),
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: AppTheme.short.withValues(alpha: 0.4)),
+              ),
+              child: const Row(
+                children: [
+                  Icon(Icons.warning_amber_rounded, size: 16, color: AppTheme.short),
+                  SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      '变点转换期：趋势未确认，建议降仓并等待人工复核',
+                      style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: AppTheme.short),
+                    ),
+                  ),
+                ],
+              ),
+            ),
           Row(
             children: [
               Icon(_trendIcon(judgment.trend), color: trendColor, size: 28),

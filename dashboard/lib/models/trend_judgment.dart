@@ -19,6 +19,7 @@ class TrendJudgment {
     this.consensusCapped = false,
     this.consensusMisaligned = false,
     this.modelAgreement,
+    this.dashboardRegime,
   });
 
   factory TrendJudgment.fromJson(Map<String, dynamic> json) => TrendJudgment(
@@ -40,6 +41,7 @@ class TrendJudgment {
         consensusCapped: json['consensus_capped'] as bool? ?? false,
         consensusMisaligned: json['consensus_misaligned'] as bool? ?? false,
         modelAgreement: (json['model_agreement'] as num?)?.toDouble(),
+        dashboardRegime: json['dashboard_regime'] as String?,
       );
 
   /// 从 btc_regime 降级推导（API 未升级时）
@@ -94,8 +96,24 @@ class TrendJudgment {
   final bool consensusCapped;
   final bool consensusMisaligned;
   final double? modelAgreement;
+  final String? dashboardRegime;
 
   bool get isConfirmed => stability == 'confirmed';
+
+  /// 预填人工判断 Regime（优先 dashboard_regime，否则由 regime_id 推导）
+  String get suggestedHumanRegime {
+    if (dashboardRegime != null && dashboardRegime!.isNotEmpty) {
+      return dashboardRegime!;
+    }
+    if (stability == 'transition' || inRegimeTransition) return 'transition';
+    final id = regimeId;
+    if (id.contains('uptrend')) return 'trend_up';
+    if (id.contains('downtrend')) return 'trend_down';
+    if (id.contains('high_vol') && id.contains('range')) return 'high_vol';
+    if (id.contains('range') || id.contains('frozen')) return 'range';
+    if (id.contains('fake_breakout') || id.contains('wash')) return 'transition';
+    return 'transition';
+  }
 }
 
 TrendJudgment? parseTrendJudgment(Map<String, dynamic>? json, {Map<String, dynamic>? btcFallback}) {

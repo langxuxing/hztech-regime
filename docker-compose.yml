@@ -22,6 +22,7 @@ services:
       - --poll-events
       - --no-poll-snapshots
       - --warmup-snapshot
+      - --poll-feedback
     restart: unless-stopped
 
   snapshot-worker:

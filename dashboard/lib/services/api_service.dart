@@ -184,6 +184,19 @@ class ApiService {
     return asJsonMapList(body['history']);
   }
 
+  Future<Map<String, dynamic>> fetchFeedbackStats({
+    String symbol = 'BTC/USDT:USDT',
+  }) async {
+    final uri = Uri.parse('$baseUrl/api/regime/feedback-stats').replace(
+      queryParameters: {'symbol': symbol},
+    );
+    final response = await _get(uri, timeout: const Duration(seconds: 15));
+    if (response.statusCode != 200) {
+      throw Exception(_errorFromResponse(response, '反馈统计'));
+    }
+    return asJsonMap(jsonDecode(response.body));
+  }
+
   Future<bool> checkHealth() async {
     try {
       final uri = Uri.parse('$baseUrl/health');
