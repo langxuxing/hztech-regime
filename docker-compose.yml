@@ -1,0 +1,38 @@
+services:
+  api:
+    build: .
+    ports:
+      - "${API_PORT:-8765}:8765"
+    env_file:
+      - .env
+    environment:
+      POLL_SNAPSHOTS: "0"
+      SNAPSHOT_WARMUP_ON_START: "true"
+    volumes:
+      - ./data:/app/data
+    command:
+      - python
+      - -m
+      - ai_trade_advisor.api_server
+      - --host
+      - "0.0.0.0"
+      - --port
+      - "8765"
+      - --skip-orderbook
+      - --poll-events
+      - --no-poll-snapshots
+      - --warmup-snapshot
+    restart: unless-stopped
+
+  snapshot-worker:
+    build: .
+    env_file:
+      - .env
+    volumes:
+      - ./data:/app/data
+    command:
+      - python
+      - -m
+      - ai_trade_advisor.snapshot.worker
+      - --skip-orderbook
+    restart: unless-stopped

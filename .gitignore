@@ -1,0 +1,61 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+.venv/
+venv/
+env/
+*.egg-info/
+.eggs/
+dist/
+build/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# Secrets & local config
+.env
+*.pem
+*.key
+
+# Data (large / runtime artifacts)
+data/OHLCV/
+data/cache/
+data/logs/
+data/run/
+data/exports/
+data/db/*.db
+data/db/*.db-*
+.cache/
+
+# Keep data layout placeholders
+!data/.gitkeep
+!data/db/.gitkeep
+
+# IDE & OS
+.idea/
+.vscode/
+*.swp
+.DS_Store
+Thumbs.db
+
+# Flutter / Dart
+dashboard/.dart_tool/
+dashboard/build/
+dashboard/.flutter-plugins
+dashboard/.flutter-plugins-dependencies
+dashboard/.packages
+dashboard/ios/Pods/
+dashboard/ios/.symlinks/
+dashboard/macos/Flutter/ephemeral/
+dashboard/android/.gradle/
+
+# Logs
+*.log
+
+# Docker local overrides
+docker-compose.override.yml

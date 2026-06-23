@@ -1,0 +1,9 @@
+indicator,latest_date,latest_value,rows,source,path
+m2,2026-04-01,22804.5,808,fred:M2SL,/Volumes/HZTech/Regime&Trend/data/macro/m2/m2sl.csv
+ppi,2026-05-01,157.659,199,fred:PPIFIS,/Volumes/HZTech/Regime&Trend/data/macro/ppi/ppifis.csv
+cpi,2026-05-01,333.979,952,fred:CPIAUCSL,/Volumes/HZTech/Regime&Trend/data/macro/cpi/cpiaucsl.csv
+fed_rate,2026-05-01,3.63,863,fred:FEDFUNDS,/Volumes/HZTech/Regime&Trend/data/macro/fed_rate/fedfunds.csv
+fed_target_upper,2026-06-22,3.75,6398,fred:DFEDTARU,/Volumes/HZTech/Regime&Trend/data/macro/fed_rate/fed_target_upper.csv
+fed_target_lower,2026-06-22,3.5,6398,fred:DFEDTARL,/Volumes/HZTech/Regime&Trend/data/macro/fed_rate/fed_target_lower.csv
+nfp,2026-05-01,159001.0,1049,fred:PAYEMS,/Volumes/HZTech/Regime&Trend/data/macro/nfp/payems.csv
+ism,2026-06-01,54.0,678,investing.com:ism_pmi,/Volumes/HZTech/Regime&Trend/data/macro/ism/ism_manufacturing_pmi.csv
