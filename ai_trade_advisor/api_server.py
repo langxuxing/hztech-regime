@@ -22,6 +22,7 @@ from ai_trade_advisor.regime.feedback.store import FeedbackStore
 from ai_trade_advisor.regime.feedback.recommender import recommend_model
 from ai_trade_advisor.regime.feedback.market_context import build_market_context
 from ai_trade_advisor.regime.feedback.calibrator import run_calibration
+from ai_trade_advisor.regime.trend_health import run_trend_health_check
 from ai_trade_advisor.regime.feedback.worker import run_forward_scoring_batch
 from ai_trade_advisor.datasource.capabilities import assess_data_capabilities
 from ai_trade_advisor.datasource.scheduler_meta import SchedulerMetaStore
@@ -78,13 +79,32 @@ def health():
     cfg = AdvisorConfig.from_env()
     key = f"{cfg.exchange}_{cfg.symbol.replace('/', '_').replace(':', '_')}"
     age = _snapshot_store.age_seconds(key)
+    bundle = _snapshot_store.get(key)
+    tj = (bundle or {}).get("trend_judgment")
+    health_status = run_trend_health_check(cfg, store=_snapshot_store, regime_store=_regime_store)
     return jsonify(
         {
-            "status": "ok",
+            "status": "ok" if health_status["status"] != "critical" else "degraded",
             "snapshot_age_sec": age,
             "snapshot_stale_sec": cfg.snapshot_stale_sec,
+            "readiness_tier": health_status.get("readiness_tier"),
+            "trend_health_status": health_status.get("status"),
+            "trend": (tj or {}).get("trend"),
+            "trend_stability": (tj or {}).get("stability"),
         }
     )
+
+
+@app.route("/api/trend-health", methods=["GET", "OPTIONS"])
+def trend_health():
+    """趋势判断健康检查（快照新鲜度、翻转频率、人工判断触发）。"""
+    cfg = _cfg_from_query()
+    try:
+        report = run_trend_health_check(cfg, store=_snapshot_store, regime_store=_regime_store)
+        code = 200 if report["status"] == "ok" else (503 if report["status"] == "critical" else 200)
+        return jsonify(report), code
+    except Exception as exc:
+        return jsonify({"error": str(exc), "status": "critical"}), 500
 
 
 @app.route("/api/radar", methods=["GET", "OPTIONS"])
@@ -520,6 +540,7 @@ def main(argv: list[str] | None = None) -> int:
 
     print(f"看板 API 运行于 http://{args.host}:{args.port}")
     print("  雷达聚合: /api/radar")
+    print("  趋势健康: /api/trend-health")
     print("  交易看板: /api/dashboard")
     print("  趋势集成: /api/trend-consensus")
     print("  状态机:   /api/state-machine")

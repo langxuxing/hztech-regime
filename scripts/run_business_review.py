@@ -367,11 +367,49 @@ def audit_models_on_local_data(report: ReviewReport) -> None:
         )
 
 
+def audit_trend_health(report: ReviewReport) -> None:
+    """趋势判断健康检查（快照 / trend_judgment 契约）。"""
+    from ai_trade_advisor.regime.trend_health import run_trend_health_check
+
+    try:
+        health = run_trend_health_check()
+    except Exception as exc:
+        report.add(
+            Finding(
+                severity="high",
+                category="trend_health",
+                title="趋势健康检查失败",
+                detail=str(exc),
+            )
+        )
+        return
+
+    report.sections["trend_health"] = {
+        "status": health.get("status"),
+        "readiness_tier": health.get("readiness_tier"),
+        "snapshot_present": health.get("snapshot_present"),
+        "findings_count": len(health.get("findings") or []),
+    }
+
+    for finding in health.get("findings") or []:
+        sev = finding.get("severity", "info")
+        if sev in ("critical", "high", "medium"):
+            report.add(
+                Finding(
+                    severity=sev,
+                    category="trend_health",
+                    title=finding.get("title", "趋势健康"),
+                    detail=finding.get("detail", ""),
+                )
+            )
+
+
 def run_pytest(report: ReviewReport) -> None:
     tests = [
         "tests/test_data_paths.py",
         "tests/test_ohlcv_local.py",
         "tests/test_readiness.py",
+        "tests/test_readiness_cache.py",
         "tests/test_layers.py",
         "tests/test_regime_confirmation.py",
         "tests/test_regime_models.py",
@@ -379,6 +417,9 @@ def run_pytest(report: ReviewReport) -> None:
         "tests/test_derivatives_trend.py",
         "tests/test_taker_cvd.py",
         "tests/test_black_swan.py",
+        "tests/test_trend_judgment.py",
+        "tests/test_trend_health_check.py",
+        "tests/test_api_radar_contract.py",
     ]
     cmd = [sys.executable, "-m", "pytest", "-q", "--tb=no", *tests]
     proc = subprocess.run(cmd, cwd=ROOT, capture_output=True, text=True, check=False)
@@ -454,6 +495,9 @@ def main() -> int:
 
     print("P3 模型 ensemble（本地 30m）...")
     audit_models_on_local_data(report)
+
+    print("P4 趋势健康...")
+    audit_trend_health(report)
 
     print("P6 测试套件...")
     run_pytest(report)

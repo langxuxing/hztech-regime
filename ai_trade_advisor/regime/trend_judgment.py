@@ -15,9 +15,27 @@ _TREND_LABELS: dict[str, str] = {
     "range": "震荡",
 }
 
-_CONSENSUS_CAP = 0.55
+_CONSENSUS_CAP_DEFAULT = 0.55
 
-# 业务决策矩阵（趋势 × Regime → 建议姿态）
+TREND_JUDGMENT_REQUIRED_KEYS = frozenset({
+    "trend",
+    "trend_label",
+    "tech_trend",
+    "confidence",
+    "regime_id",
+    "regime_label",
+    "stability",
+    "business_stance",
+    "drivers",
+    "data_tier",
+    "needs_human_judgment",
+    "hmm_disagrees",
+    "consensus_misaligned",
+    "consensus_capped",
+})
+
+VALID_TRENDS = frozenset({"uptrend", "downtrend", "range"})
+VALID_STABILITY = frozenset({"confirmed", "provisional", "transition"})
 _BUSINESS_STANCE: dict[tuple[str, str], str] = {
     ("uptrend", "low_vol_uptrend"): "顺势做多 · 低波趋势延续",
     ("uptrend", "mid_vol_uptrend"): "顺势做多 · 中波趋势延续",
@@ -97,6 +115,8 @@ def _consensus_alignment(trend: str, consensus: dict[str, Any] | None) -> dict[s
 def apply_consensus_confidence_cap(
     confidence: float,
     alignment: dict[str, Any] | None,
+    *,
+    cap: float = _CONSENSUS_CAP_DEFAULT,
 ) -> tuple[float, bool, bool]:
     """
     外部共识与内部趋势明确相反时裁剪置信度。
@@ -107,8 +127,31 @@ def apply_consensus_confidence_cap(
     if not alignment or not alignment.get("opposing"):
         return confidence, False, False
     before = confidence
-    after = min(confidence, _CONSENSUS_CAP)
+    after = min(confidence, cap)
     return after, True, after < before
+
+
+def validate_trend_judgment(tj: dict[str, Any] | None) -> list[str]:
+    """校验 trend_judgment 契约，返回错误列表（空=通过）。"""
+    if not tj:
+        return ["trend_judgment is missing"]
+    errors: list[str] = []
+    missing = TREND_JUDGMENT_REQUIRED_KEYS - set(tj.keys())
+    if missing:
+        errors.append(f"missing keys: {sorted(missing)}")
+    trend = tj.get("trend")
+    if trend not in VALID_TRENDS:
+        errors.append(f"invalid trend: {trend}")
+    stability = tj.get("stability")
+    if stability not in VALID_STABILITY:
+        errors.append(f"invalid stability: {stability}")
+    conf = tj.get("confidence")
+    if not isinstance(conf, (int, float)) or not (0 <= float(conf) <= 1):
+        errors.append(f"invalid confidence: {conf}")
+    return errors
+
+
+# 业务决策矩阵（趋势 × Regime → 建议姿态）
 
 
 def _resolve_hmm_modifier(btc_regime: dict[str, Any]) -> dict[str, Any] | None:
@@ -127,6 +170,7 @@ def build_trend_judgment(
     consensus: dict[str, Any] | None = None,
     data_tier: str = "unknown",
     hmm_modifier: dict[str, Any] | None = None,
+    consensus_cap: float = _CONSENSUS_CAP_DEFAULT,
 ) -> dict[str, Any] | None:
     """
     构建对外趋势判断块。
@@ -145,7 +189,7 @@ def build_trend_judgment(
     stability = _stability_from_confirmation(btc_regime, regime_confirmation)
     alignment = _consensus_alignment(trend, consensus)
     confidence, consensus_misaligned, consensus_capped = apply_consensus_confidence_cap(
-        confidence, alignment
+        confidence, alignment, cap=consensus_cap
     )
 
     comparison = btc_regime.get("model_comparison") or {}

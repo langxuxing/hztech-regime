@@ -10,6 +10,7 @@ from ai_trade_advisor.regime.trend_judgment import (
     apply_consensus_confidence_cap,
     build_trend_judgment,
     business_stance,
+    validate_trend_judgment,
 )
 
 
@@ -281,6 +282,21 @@ def test_business_stance_matrix():
     assert "强制观望" in business_stance("downtrend", "macro_frozen_range")
 
 
+def test_validate_trend_judgment_contract():
+    tj = build_trend_judgment(
+        _minimal_btc(),
+        regime_confirmation={
+            "dwell_bars": 2,
+            "min_dwell_bars": 2,
+            "combined": {
+                "live_regime_id": "mid_vol_uptrend",
+                "confirmed_regime_id": "mid_vol_uptrend",
+            },
+        },
+    )
+    assert validate_trend_judgment(tj) == []
+
+
 def test_radar_bundle_includes_trend_judgment(monkeypatch):
     from ai_trade_advisor.config import AdvisorConfig
     from ai_trade_advisor.snapshot import bundle as snap_bundle
@@ -320,7 +336,10 @@ def test_radar_bundle_includes_trend_judgment(monkeypatch):
     monkeypatch.setattr(snap_bundle, "compute_dashboard_snapshot", _fake_core)
     monkeypatch.setattr(snap_bundle, "run_event_analysis", lambda *a, **k: (_ for _ in ()).throw(Exception("skip")))
     monkeypatch.setattr(snap_bundle, "fetch_from_config", lambda *a, **k: _FakeConsensus())
-    monkeypatch.setattr(snap_bundle, "check_readiness", lambda *a, **k: type("R", (), {"tier": "demo"})())
+    monkeypatch.setattr(
+        "ai_trade_advisor.readiness.get_cached_readiness_tier",
+        lambda *a, **k: "demo",
+    )
 
     class _Store:
         def recent(self, **kwargs):

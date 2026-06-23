@@ -281,7 +281,13 @@ def _attach_triad(df: pd.DataFrame, base: BtcRegimeAnalysis, cfg: AdvisorConfig 
         try:
             from ai_trade_advisor.regime.hmm_modifier import apply_hmm_confidence_modifier
 
-            base, hmm_meta = apply_hmm_confidence_modifier(base, base.models)
+            base, hmm_meta = apply_hmm_confidence_modifier(
+                base,
+                base.models,
+                disagree_cap=cfg.hmm_disagree_confidence_cap,
+                low_conf_cap=cfg.hmm_low_confidence_cap,
+                low_conf_threshold=cfg.hmm_low_confidence_threshold,
+            )
             base.hmm_modifier = hmm_meta
         except Exception as exc:
             base.drivers = list(base.drivers) + [f"HMM 修正跳过: {exc}"]

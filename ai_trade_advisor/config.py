@@ -47,6 +47,12 @@ class AdvisorConfig:
     regime_rollup_window_days: int = 30
     regime_use_recommendation: bool = True
     regime_calibration_interval_hours: int = 24
+    hmm_disagree_confidence_cap: float = 0.55
+    hmm_low_confidence_cap: float = 0.60
+    hmm_low_confidence_threshold: float = 0.50
+    consensus_opposing_confidence_cap: float = 0.55
+    trend_health_regime_flip_threshold: int = 6
+    readiness_cache_ttl_sec: int = 60
     black_swan_liq_pulse_usd: float = 5_000_000.0
     black_swan_liq_total_usd: float = 10_000_000.0
     black_swan_changepoint_threshold: float = 0.7
@@ -127,6 +133,16 @@ class AdvisorConfig:
             regime_use_recommendation=os.getenv("REGIME_USE_RECOMMENDATION", "true").lower()
             in ("1", "true", "yes"),
             regime_calibration_interval_hours=int(os.getenv("REGIME_CALIBRATION_INTERVAL_HOURS", "24")),
+            hmm_disagree_confidence_cap=float(os.getenv("HMM_DISAGREE_CONFIDENCE_CAP", "0.55")),
+            hmm_low_confidence_cap=float(os.getenv("HMM_LOW_CONFIDENCE_CAP", "0.60")),
+            hmm_low_confidence_threshold=float(os.getenv("HMM_LOW_CONFIDENCE_THRESHOLD", "0.50")),
+            consensus_opposing_confidence_cap=float(
+                os.getenv("CONSENSUS_OPPOSING_CONFIDENCE_CAP", "0.55")
+            ),
+            trend_health_regime_flip_threshold=int(
+                os.getenv("TREND_HEALTH_REGIME_FLIP_THRESHOLD", "6")
+            ),
+            readiness_cache_ttl_sec=int(os.getenv("READINESS_CACHE_TTL_SEC", "60")),
             black_swan_liq_pulse_usd=float(os.getenv("BLACK_SWAN_LIQ_PULSE_USD", "5000000")),
             black_swan_liq_total_usd=float(os.getenv("BLACK_SWAN_LIQ_TOTAL_USD", "10000000")),
             black_swan_changepoint_threshold=float(os.getenv("BLACK_SWAN_CHANGEPOINT_THRESHOLD", "0.7")),

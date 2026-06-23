@@ -2,6 +2,8 @@
 from __future__ import annotations
 
 import os
+import threading
+import time
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -87,3 +89,29 @@ def check_readiness(cfg: AdvisorConfig | None = None) -> ReadinessReport:
         notes=notes,
         capital_flows_quality=str(cf_quality),
     )
+
+
+_readiness_cache: dict[str, tuple[float, str]] = {}
+_readiness_lock = threading.Lock()
+
+
+def get_cached_readiness_tier(cfg: AdvisorConfig | None = None) -> str:
+    """带 TTL 缓存的就绪层级，避免 snapshot 重建时重复 build_capital_flows。"""
+    cfg = cfg or AdvisorConfig.from_env()
+    cache_key = f"{cfg.exchange}:{cfg.symbol}"
+    ttl = max(float(cfg.readiness_cache_ttl_sec), 1.0)
+    now = time.time()
+    with _readiness_lock:
+        cached = _readiness_cache.get(cache_key)
+        if cached and now - cached[0] < ttl:
+            return cached[1]
+    tier = check_readiness(cfg).tier
+    with _readiness_lock:
+        _readiness_cache[cache_key] = (now, tier)
+    return tier
+
+
+def reset_readiness_cache() -> None:
+    """测试辅助：清空就绪度缓存。"""
+    with _readiness_lock:
+        _readiness_cache.clear()

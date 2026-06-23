@@ -8,7 +8,7 @@ from ai_trade_advisor.bigevent.store import EventStore
 from ai_trade_advisor.config import AdvisorConfig
 from ai_trade_advisor.forecast.ensemble import fetch_from_config
 from ai_trade_advisor.pipeline import run_advisor
-from ai_trade_advisor.readiness import check_readiness
+from ai_trade_advisor.readiness import get_cached_readiness_tier
 from ai_trade_advisor.regime.feedback.market_context import build_market_context
 from ai_trade_advisor.regime.feedback.recommender import recommend_model
 from ai_trade_advisor.regime.history import RegimeHistoryStore
@@ -125,7 +125,7 @@ def build_radar_bundle(
 
     readiness_tier = "unknown"
     try:
-        readiness_tier = check_readiness(cfg).tier
+        readiness_tier = get_cached_readiness_tier(cfg)
     except Exception as exc:
         errors.append(f"readiness: {exc}")
 
@@ -137,6 +137,7 @@ def build_radar_bundle(
         consensus=consensus,
         data_tier=readiness_tier,
         hmm_modifier=btc.get("hmm_modifier") or btc.get("hmm_confidence_modifier"),
+        consensus_cap=cfg.consensus_opposing_confidence_cap,
     )
 
     return {
