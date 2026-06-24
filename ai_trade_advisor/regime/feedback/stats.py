@@ -61,3 +61,27 @@ def build_feedback_stats(
         "latest_judgment_at": latest.get("recorded_at") if latest else None,
         "message": message,
     }
+
+
+def should_apply_recommendation_fusion(
+    cfg: AdvisorConfig,
+    recommendation: dict[str, Any] | None,
+    *,
+    stats: dict[str, Any] | None = None,
+    judgment_store: HumanJudgmentStore | None = None,
+    feedback_store: FeedbackStore | None = None,
+) -> bool:
+    """是否将 Leaderboard 推荐融入 ensemble（需 env 开启且样本达标）。"""
+    if not cfg.regime_use_recommendation:
+        return False
+    if not recommendation or not recommendation.get("best_model_id"):
+        return False
+    if recommendation.get("low_confidence"):
+        return False
+    stats = stats or build_feedback_stats(
+        symbol=cfg.symbol,
+        cfg=cfg,
+        judgment_store=judgment_store,
+        feedback_store=feedback_store,
+    )
+    return bool(stats.get("recommendation_ready"))

@@ -25,7 +25,13 @@ curl http://127.0.0.1:8765/api/scheduler/status
 ./scripts/status.sh
 ```
 
-推荐 `docker compose up --build -d` 一键启动 API + snapshot-worker。
+推荐 `docker compose up --build -d` 一键启动 API + snapshot-worker + data-scheduler。
+
+第 3–4 周验收清单见 [WEEK3_4.md](WEEK3_4.md)。
+
+```bash
+python scripts/run_week34_checklist.py
+```
 
 ## 3. 趋势判断监控
 

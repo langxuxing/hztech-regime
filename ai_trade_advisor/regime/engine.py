@@ -18,6 +18,7 @@ from ai_trade_advisor.regime.models.ensemble import run_all_regime_models
 from ai_trade_advisor.regime.feedback.fusion import fuse_with_leaderboard
 from ai_trade_advisor.regime.feedback.market_context import build_market_context
 from ai_trade_advisor.regime.feedback.recommender import recommend_model
+from ai_trade_advisor.regime.feedback.stats import should_apply_recommendation_fusion
 from ai_trade_advisor.regime.feedback.store import FeedbackStore
 from ai_trade_advisor.regime.judgment_store import HumanJudgmentStore
 from ai_trade_advisor.models import CapitalFlowsSnapshot, MarketContext
@@ -262,13 +263,16 @@ def _attach_triad(df: pd.DataFrame, base: BtcRegimeAnalysis, cfg: AdvisorConfig 
         recommendation = recommend_model(mctx, symbol=cfg.symbol, window_days=cfg.regime_rollup_window_days)
         base.model_recommendation = recommendation
 
-        if cfg.regime_use_recommendation and base.models:
+        if should_apply_recommendation_fusion(cfg, recommendation) and base.models:
             comparison = fuse_with_leaderboard(
                 comparison,
                 base.models,
                 recommendation,
                 use_recommendation=True,
             )
+        elif cfg.regime_use_recommendation and recommendation and not recommendation.get("best_model_id"):
+            comparison = dict(comparison)
+            comparison["recommendation_note"] = recommendation.get("reason", "样本不足，未融合推荐模型")
         base.model_comparison = comparison
 
         if comparison.get("needs_human_judgment"):

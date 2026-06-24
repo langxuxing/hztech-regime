@@ -23,6 +23,49 @@ check() {
 check "API"  "http://${API_HOST}:${API_PORT}/health" "$API_PID_FILE"
 check "Web"  "http://localhost:${WEB_PORT}"           "$WEB_PID_FILE"
 
+SNAPSHOT_PID_FILE="$PID_DIR/snapshot-worker.pid"
+if is_running "$SNAPSHOT_PID_FILE"; then
+  log "Snapshot-worker: 运行中 (pid $(cat "$SNAPSHOT_PID_FILE"))"
+else
+  log "Snapshot-worker: 未运行（启动: ./scripts/start-snapshot-worker.sh）"
+fi
+
+if curl -sf "http://${API_HOST}:${API_PORT}/health" >/dev/null 2>&1; then
+  activate_venv 2>/dev/null || true
+  # shellcheck disable=SC1091
+  [[ -f "$VENV/bin/activate" ]] && source "$VENV/bin/activate"
+  API_HOST="$API_HOST" API_PORT="$API_PORT" python - <<'PY' 2>/dev/null | while IFS= read -r line; do log "$line"; done || true
+import json
+import os
+import urllib.request
+
+host = os.environ.get("API_HOST", "127.0.0.1")
+port = os.environ.get("API_PORT", "8765")
+base = f"http://{host}:{port}"
+try:
+    health = json.loads(urllib.request.urlopen(f"{base}/health", timeout=5).read())
+    print(
+        f"趋势健康: {health.get('trend_health_status')} | "
+        f"readiness={health.get('readiness_tier')} | "
+        f"trend={health.get('trend')} ({health.get('trend_stability')}) | "
+        f"snapshot_age={health.get('snapshot_age_sec')}s"
+    )
+except Exception as exc:
+    print(f"趋势健康: 查询失败 ({exc})")
+
+try:
+    stats = json.loads(
+        urllib.request.urlopen(f"{base}/api/regime/feedback-stats", timeout=5).read()
+    )
+    print(
+        f"反馈闭环: {stats.get('judgment_count')}/{stats.get('min_judgments_for_recommendation')} | "
+        f"ready={stats.get('recommendation_ready')}"
+    )
+except Exception as exc:
+    print(f"反馈闭环: 查询失败 ({exc})")
+PY
+fi
+
 if is_running "$SYNC_PID_FILE"; then
   log "Sync:  运行中 (pid $(cat "$SYNC_PID_FILE")) → 每天 $(printf '%02d:%02d' "$SYNC_HOUR" "$SYNC_MINUTE") (${SYNC_TIMEZONE})"
 else

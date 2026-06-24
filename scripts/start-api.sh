@@ -38,6 +38,10 @@ else
   EXTRA_ARGS+=(--no-warmup-snapshot)
 fi
 
+if [[ "${POLL_FEEDBACK:-1}" == "1" ]]; then
+  EXTRA_ARGS+=(--poll-feedback)
+fi
+
 log "启动 API → http://${API_HOST}:${API_PORT}"
 pid="$(run_detached "$PID_DIR/api.log" python -m ai_trade_advisor.api_server \
   --host "$API_HOST" \
