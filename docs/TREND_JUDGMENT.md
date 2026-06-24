@@ -88,7 +88,10 @@ BTC 30m OHLCV
 python scripts/trend_health_check.py      # 快照与趋势健康
 python scripts/run_trend_backtest.py      # 历史 walk-forward
 python scripts/run_calibrator_baseline.py # 校准器基线
+python scripts/run_trend_soak_test.py     # 48h 稳定性 soak
+python scripts/check_trend_production.py  # 生产门禁
 curl http://127.0.0.1:8765/api/trend-health
+curl http://127.0.0.1:8765/api/regime/feedback-stats
 ```
 
 生产运维见 [docs/PRODUCTION_OPS.md](docs/PRODUCTION_OPS.md)。

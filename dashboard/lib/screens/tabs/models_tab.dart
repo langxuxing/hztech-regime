@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
 
+import '../../models/trend_judgment.dart';
 import '../../models/dashboard_data.dart';
 import '../../regime/btc_regime_detail_panel.dart';
+import '../../regime/human_judgment_quick_panel.dart';
 import '../../regime/model_comparison_panel.dart';
 import '../../regime/judgment_history_panel.dart';
 import '../../regime/model_leaderboard_panel.dart';
@@ -19,6 +21,7 @@ class ModelsTab extends StatelessWidget {
     required this.onRefresh,
     this.isRefreshing = false,
     this.api,
+    this.trendJudgment,
   });
 
   final DashboardData data;
@@ -26,10 +29,13 @@ class ModelsTab extends StatelessWidget {
   final Future<void> Function() onRefresh;
   final bool isRefreshing;
   final ApiService? api;
+  final TrendJudgment? trendJudgment;
 
   @override
   Widget build(BuildContext context) {
     final btc = data.btcRegime;
+    final heroJudgment =
+        trendJudgment ?? TrendJudgment.fromBtcRegime(btc);
 
     return RadarPageShell(
       onRefresh: onRefresh,
@@ -39,6 +45,14 @@ class ModelsTab extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
+          if (api != null) ...[
+            HumanJudgmentQuickPanel(
+              judgment: heroJudgment,
+              api: api!,
+              symbol: data.symbol,
+            ),
+            const SizedBox(height: 16),
+          ],
           if (btc != null) ...[
             RegimeMatrixPanel(data: data),
             const SizedBox(height: 16),

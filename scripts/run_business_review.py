@@ -367,6 +367,52 @@ def audit_models_on_local_data(report: ReviewReport) -> None:
         )
 
 
+def audit_feedback_loop(report: ReviewReport) -> None:
+    """人工反馈闭环样本与推荐就绪度。"""
+    from ai_trade_advisor.regime.feedback.stats import build_feedback_stats
+
+    cfg = AdvisorConfig.from_env()
+    try:
+        stats = build_feedback_stats(symbol=cfg.symbol, cfg=cfg)
+    except Exception as exc:
+        report.add(
+            Finding(
+                severity="medium",
+                category="feedback",
+                title="反馈统计查询失败",
+                detail=str(exc),
+            )
+        )
+        return
+
+    report.sections["feedback"] = stats
+
+    if stats["judgment_count"] < stats["min_judgments_for_recommendation"]:
+        report.add(
+            Finding(
+                severity="info",
+                category="feedback",
+                title="人工判断样本不足",
+                detail=stats.get("message", ""),
+                evidence={
+                    "judgment_count": stats["judgment_count"],
+                    "min": stats["min_judgments_for_recommendation"],
+                },
+            )
+        )
+
+    if cfg.regime_use_recommendation and not stats["recommendation_ready"]:
+        report.add(
+            Finding(
+                severity="medium",
+                category="feedback",
+                title="REGIME_USE_RECOMMENDATION 已开但样本未就绪",
+                detail=stats.get("message", ""),
+                evidence=stats,
+            )
+        )
+
+
 def audit_trend_health(report: ReviewReport) -> None:
     """趋势判断健康检查（快照 / trend_judgment 契约）。"""
     from ai_trade_advisor.regime.trend_health import run_trend_health_check
@@ -421,6 +467,7 @@ def run_pytest(report: ReviewReport) -> None:
         "tests/test_trend_health_check.py",
         "tests/test_api_radar_contract.py",
         "tests/test_feedback_stats.py",
+        "tests/test_trend_soak.py",
     ]
     cmd = [sys.executable, "-m", "pytest", "-q", "--tb=no", *tests]
     proc = subprocess.run(cmd, cwd=ROOT, capture_output=True, text=True, check=False)
@@ -499,6 +546,9 @@ def main() -> int:
 
     print("P4 趋势健康...")
     audit_trend_health(report)
+
+    print("P5 反馈闭环...")
+    audit_feedback_loop(report)
 
     print("P6 测试套件...")
     run_pytest(report)

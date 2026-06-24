@@ -29,4 +29,5 @@ jobs:
             tests/test_api_radar_contract.py \
             tests/test_readiness_cache.py \
             tests/test_regime_feedback.py \
-            tests/test_regime_core.py
+            tests/test_regime_core.py \
+            tests/test_trend_soak.py

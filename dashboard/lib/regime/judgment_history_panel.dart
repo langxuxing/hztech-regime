@@ -21,6 +21,7 @@ class JudgmentHistoryPanel extends StatefulWidget {
 
 class _JudgmentHistoryPanelState extends State<JudgmentHistoryPanel> {
   List<Map<String, dynamic>> _history = [];
+  Map<String, dynamic>? _stats;
   bool _loading = true;
   String? _error;
 
@@ -36,10 +37,14 @@ class _JudgmentHistoryPanelState extends State<JudgmentHistoryPanel> {
       _error = null;
     });
     try {
-      final result = await widget.api.fetchHumanJudgmentHistory(symbol: widget.symbol);
+      final results = await Future.wait([
+        widget.api.fetchHumanJudgmentHistory(symbol: widget.symbol),
+        widget.api.fetchFeedbackStats(symbol: widget.symbol),
+      ]);
       if (!mounted) return;
       setState(() {
-        _history = result;
+        _history = results[0] as List<Map<String, dynamic>>;
+        _stats = results[1] as Map<String, dynamic>;
         _loading = false;
       });
     } catch (e) {
@@ -70,73 +75,83 @@ class _JudgmentHistoryPanelState extends State<JudgmentHistoryPanel> {
             )
           : _error != null
               ? Text(_error!, style: const TextStyle(fontSize: 11, color: AppTheme.short))
-              : _history.isEmpty
-                  ? const Text(
-                      '暂无人工标注记录',
-                      style: TextStyle(fontSize: 11, color: AppTheme.textSecondary),
-                    )
-                  : Column(
-                      children: _history
-                          .take(10)
-                          .map(
-                            (row) => Padding(
-                              padding: const EdgeInsets.only(bottom: 10),
-                              child: Row(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Expanded(
-                                    child: Column(
-                                      crossAxisAlignment: CrossAxisAlignment.start,
-                                      children: [
-                                        Text(
-                                          row['human_regime']?.toString() ?? '—',
-                                          style: const TextStyle(
-                                            fontSize: 12,
-                                            fontWeight: FontWeight.w600,
-                                          ),
-                                        ),
-                                        if (row['human_trend'] != null)
+              : Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    if (_stats != null) ...[
+                      _FeedbackStatsStrip(stats: _stats!),
+                      const SizedBox(height: 12),
+                    ],
+                    if (_history.isEmpty)
+                      const Text(
+                        '暂无人工标注记录',
+                        style: TextStyle(fontSize: 11, color: AppTheme.textSecondary),
+                      )
+                    else
+                      Column(
+                        children: _history
+                            .take(10)
+                            .map(
+                              (row) => Padding(
+                                padding: const EdgeInsets.only(bottom: 10),
+                                child: Row(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Expanded(
+                                      child: Column(
+                                        crossAxisAlignment: CrossAxisAlignment.start,
+                                        children: [
                                           Text(
-                                            '趋势: ${row['human_trend']}',
+                                            row['human_regime']?.toString() ?? '—',
                                             style: const TextStyle(
-                                              fontSize: 10,
-                                              color: AppTheme.textSecondary,
+                                              fontSize: 12,
+                                              fontWeight: FontWeight.w600,
                                             ),
                                           ),
-                                        if (row['forward_scored_at'] != null)
-                                          Text(
-                                            'forward ✓ ${(row['realized_regime'] as Map?)?['realized_trend'] ?? ''}',
-                                            style: const TextStyle(fontSize: 9, color: AppTheme.long),
-                                          ),
-                                        if (row['scores'] != null)
-                                          Text(
-                                            _fmtScores(row['scores'] as List<dynamic>),
-                                            style: const TextStyle(fontSize: 9, color: AppTheme.textSecondary),
-                                          ),
-                                        if (row['human_notes'] != null)
-                                          Text(
-                                            row['human_notes'].toString(),
-                                            style: const TextStyle(
-                                              fontSize: 10,
-                                              color: AppTheme.textSecondary,
+                                          if (row['human_trend'] != null)
+                                            Text(
+                                              '趋势: ${row['human_trend']}',
+                                              style: const TextStyle(
+                                                fontSize: 10,
+                                                color: AppTheme.textSecondary,
+                                              ),
                                             ),
-                                          ),
-                                      ],
+                                          if (row['forward_scored_at'] != null)
+                                            Text(
+                                              'forward ✓ ${(row['realized_regime'] as Map?)?['realized_trend'] ?? ''}',
+                                              style: const TextStyle(fontSize: 9, color: AppTheme.long),
+                                            ),
+                                          if (row['scores'] != null)
+                                            Text(
+                                              _fmtScores(row['scores'] as List<dynamic>),
+                                              style: const TextStyle(fontSize: 9, color: AppTheme.textSecondary),
+                                            ),
+                                          if (row['human_notes'] != null)
+                                            Text(
+                                              row['human_notes'].toString(),
+                                              style: const TextStyle(
+                                                fontSize: 10,
+                                                color: AppTheme.textSecondary,
+                                              ),
+                                            ),
+                                        ],
+                                      ),
                                     ),
-                                  ),
-                                  Text(
-                                    _fmtTime(row['recorded_at']?.toString()),
-                                    style: const TextStyle(
-                                      fontSize: 9,
-                                      color: AppTheme.textSecondary,
+                                    Text(
+                                      _fmtTime(row['recorded_at']?.toString()),
+                                      style: const TextStyle(
+                                        fontSize: 9,
+                                        color: AppTheme.textSecondary,
+                                      ),
                                     ),
-                                  ),
-                                ],
+                                  ],
+                                ),
                               ),
-                            ),
-                          )
-                          .toList(),
-                    ),
+                            )
+                            .toList(),
+                      ),
+                  ],
+                ),
     );
   }
 
@@ -151,5 +166,44 @@ class _JudgmentHistoryPanelState extends State<JudgmentHistoryPanel> {
     instant.sort((a, b) => ((b['total_score'] as num?) ?? 0).compareTo((a['total_score'] as num?) ?? 0));
     final top = instant.first as Map<String, dynamic>;
     return 'instant top: ${top['model_id']} ${(((top['total_score'] as num?) ?? 0) * 100).round()}%';
+  }
+}
+
+class _FeedbackStatsStrip extends StatelessWidget {
+  const _FeedbackStatsStrip({required this.stats});
+
+  final Map<String, dynamic> stats;
+
+  @override
+  Widget build(BuildContext context) {
+    final count = stats['judgment_count'] as int? ?? 0;
+    final min = stats['min_judgments_for_recommendation'] as int? ?? 30;
+    final ready = stats['recommendation_ready'] as bool? ?? false;
+    final forward = stats['forward_scored_count'] as int? ?? 0;
+    final color = ready ? AppTheme.long : AppTheme.accent;
+
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(10),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.08),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: color.withValues(alpha: 0.3)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            '反馈闭环 · $count/$min 样本 · forward $forward',
+            style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: color),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            stats['message']?.toString() ?? '',
+            style: const TextStyle(fontSize: 10, color: AppTheme.textSecondary),
+          ),
+        ],
+      ),
+    );
   }
 }

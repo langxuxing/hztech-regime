@@ -324,6 +324,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                 isRefreshing: _refreshing,
                 onRefresh: () => _refresh(),
                 api: _api,
+                trendJudgment: _trendJudgment,
               ),
             ) ??
             const SizedBox.shrink(),

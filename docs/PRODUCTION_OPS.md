@@ -78,6 +78,14 @@ python scripts/check_trend_production.py
 # exit 0=通过, 2=有警告, 1=阻断
 ```
 
+6. 48h soak 测试（上线前稳定性验证）：
+
+```bash
+python scripts/run_trend_soak_test.py --hours 48 --interval-sec 300
+# 快速自检: --samples 12 --interval-sec 60
+# exit 0=通过, 2=degraded 占比过高, 1=出现 critical
+```
+
 ## 5. 回测验证
 
 ```bash

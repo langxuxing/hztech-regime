@@ -37,3 +37,14 @@ services:
       - ai_trade_advisor.snapshot.worker
       - --skip-orderbook
     restart: unless-stopped
+
+  data-scheduler:
+    build: .
+    env_file:
+      - .env
+    volumes:
+      - ./data:/app/data
+    command:
+      - python
+      - scripts/data_scheduler.py
+    restart: unless-stopped
