@@ -60,3 +60,4 @@ dashboard/android/.gradle/
 
 # Docker local overrides
 docker-compose.override.yml
+/out/
